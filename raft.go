@@ -72,11 +72,13 @@ type LogEntry struct {
 // A Go object implementing a single Raft peer.
 //
 type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
-	peers     []*labrpc.ClientEnd // RPC end points of all peers
-	persister *Persister          // Object to hold this peer's persisted state
-	me        int                 // this peer's index into peers[]
-	dead      int32               // set by Kill()
+	mu          sync.Mutex          // Lock to protect shared access to this peer's state
+	peers       []*labrpc.ClientEnd // RPC end points of all peers
+	persister   *Persister          // Object to hold this peer's persisted state
+	me          int                 // this peer's index into peers[]
+	dead        int32               // set by Kill()
+	applyCh     chan ApplyMsg
+	newCommitCh chan struct{}
 
 	state             RaftType
 	heartbeatTimeout  time.Duration
@@ -269,7 +271,7 @@ func (rf *Raft) startElection(electionTerm int) {
 func (rf *Raft) checkVotes(receiveMajority chan bool, electionTerm int) {
 
 	rf.mu.Lock()
-	DPrintf("\t\t\t checkVotes id:%d, term: %d %q\n", rf.me, rf.currentTerm, rf.state)
+	DPrintf("\t\t\t\t checkVotes id:%d, term: %d %q\n", rf.me, rf.currentTerm, rf.state)
 	rf.mu.Unlock()
 
 	select {
@@ -324,8 +326,6 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 		return
 	}
 
-	DPrintf("\t\t\t %d %q send heart beat\n", rf.me, rf.state)
-
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
 			continue
@@ -341,6 +341,10 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 			args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
 			args.Entries = rf.log[args.PrevLogIndex+1:]
 			args.LeaderCommit = rf.commitIndex
+			DPrintf("\t\t\t %d %q send heart beat to %d, prevLogIndex: %d, prevLogTerm: %d\n",
+				rf.me, rf.state, id, args.PrevLogIndex, args.PrevLogTerm)
+			DPrintf("\t\t\t\t %#v\n", args.Entries)
+			DPrintf("\t\t\t\t nextIndex: %#v matchIndex: %#v\n", rf.nextIndex, rf.matchIndex)
 			rf.mu.Unlock()
 
 			reply := &AppendEntriesReply{}
@@ -388,10 +392,9 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 						}
 					}
 				}
-
 				if rf.commitIndex != savedCommitIndex {
-					DPrintf("\t\t\t %d %q newCommitCh\n", rf.me, rf.state)
-					// rf.newCommitCh <- true
+					// DPrintf("\t\t\t %d %q newCommitCh\n", rf.me, rf.state)
+					rf.newCommitCh <- struct{}{}
 				}
 			} else {
 				if nextIndex > 1 {
@@ -410,24 +413,26 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 //
 func (rf *Raft) applier() {
 	for rf.killed() == false {
-		// for range rf.newCommitCh {
-		// 	rf.mu.Lock()
-		// 	savedLastApplied := rf.lastApplied
-		// 	var entries []LogEntry
-		// 	if rf.commitIndex > rf.lastApplied {
-		// 		entries = rf.log[rf.lastApplied+1 : rf.commitIndex+1]
-		// 		rf.lastApplied = rf.commitIndex
-		// 	}
-		// 	rf.mu.Unlock()
+		for range rf.newCommitCh {
+			rf.mu.Lock()
+			DPrintf("\t\t\trf.applier(), %d %q\n", rf.me, rf.state)
 
-		// 	for i, entry := range entries {
-		// 		rf.applyCh <- ApplyMsg{
-		// 			CommandValid: true,
-		// 			CommandIndex: savedLastApplied + i + 1,
-		// 			Command:      entry.Command,
-		// 		}
-		// 	}
-		// }
+			savedLastApplied := rf.lastApplied
+			var entries []LogEntry
+			if rf.commitIndex > rf.lastApplied {
+				entries = rf.log[rf.lastApplied+1 : rf.commitIndex+1]
+				rf.lastApplied = rf.commitIndex
+			}
+			rf.mu.Unlock()
+
+			for i, entry := range entries {
+				rf.applyCh <- ApplyMsg{
+					CommandValid: true,
+					CommandIndex: savedLastApplied + i + 1,
+					Command:      entry.Command,
+				}
+			}
+		}
 	}
 }
 
@@ -452,6 +457,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.peers = peers
 	rf.persister = persister
 	rf.me = me
+	rf.applyCh = applyCh
+	rf.newCommitCh = make(chan struct{}, 1)
 
 	// Your initialization code here (2A, 2B, 2C)
 	rf.state = Follower
@@ -478,6 +485,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// send heartbeat package if it's a leader
 	go rf.triggerHeartbeat()
+
+	// start applier
+	go rf.applier()
 
 	DPrintf("Init Raft: %d %q\n", rf.me, rf.state)
 	return rf

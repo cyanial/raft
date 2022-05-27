@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -151,16 +150,18 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	// args.Term == rf.currentTerm
 	// no new this is heartbeat
-	if args.PrevLogIndex == len(rf.log)-1 && rf.log[args.PrevLogIndex].Term == args.PrevLogTerm {
-		reply.Term = rf.currentTerm
-		reply.Success = true
-		return
-	}
+	// if args.PrevLogIndex == len(rf.log)-1 && rf.log[args.PrevLogIndex].Term == args.PrevLogTerm {
+	// 	reply.Term = rf.currentTerm
+	// 	reply.Success = true
+	// 	return
+	// }
 
-	fmt.Println("\t\t\t********************")
-	DPrintf("\t\t\tccc")
 	// 2. Reply false if log doesn't contain an entry at prevLogIndex whose
 	//    term matches prevLogTerm
+
+	// DPrintf("\t\t\t %d, %q, prevLogIndex: %d, pregLogTerm: %d\n", rf.me, rf.state, args.PrevLogIndex, args.PrevLogTerm)
+	// DPrintf("\t\t\t\t len(rf.log): %d, rf.log[prevlogIndex].Term: ", len(rf.log))
+	// DPrintf("\t\t\t\t log: %#v\n", rf.log)
 	if args.PrevLogIndex >= len(rf.log) || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.Term = rf.currentTerm
 		reply.Success = false
@@ -195,7 +196,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// 	  index of last new entry)
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
-		// rf.newCommitCh <- true
+		rf.newCommitCh <- struct{}{}
 	}
 
 	reply.Term = rf.currentTerm
