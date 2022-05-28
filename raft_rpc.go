@@ -59,16 +59,19 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// args.Term > rf.currentTerm
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
-		rf.votedFor = args.CandidateId
-		reply.Term = rf.currentTerm
-		reply.VoteGranted = true
-		rf.lastHeartbeatTime = time.Now()
+		reply.Term = args.Term
+		if rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
+			rf.votedFor = args.CandidateId
+			reply.VoteGranted = true
+		} else {
+			rf.votedFor = -1
+			reply.VoteGranted = false
+		}
 		return
 	}
 
 	// 2. If votedFor is null or candidateId, and candidate's log is at least
 	//    as up-to-date as receiver'log, grant vote.
-
 	reply.VoteGranted = false
 	reply.Term = rf.currentTerm
 
@@ -76,7 +79,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
 		rf.votedFor = args.CandidateId
 		reply.VoteGranted = true
-		rf.lastHeartbeatTime = time.Now()
 	} else {
 		rf.votedFor = -1
 	}
@@ -120,6 +122,11 @@ type AppendEntriesReply struct {
 
 	// true if follower contained entry matching prevLogIndex and prevLogTerm
 	Success bool
+
+	// Optimized:
+	// Term of the conflicting entry and the first index it stores for that term
+	// ConflictTerm int
+	// FirstIndex   int
 }
 
 //
@@ -158,18 +165,18 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	// 2. Reply false if log doesn't contain an entry at prevLogIndex whose
 	//    term matches prevLogTerm
+	// 3. If an existing entry conflicts with a new one (same index but differnt
+	//    terms), delete the existing entry and all that follow it
 
 	// DPrintf("\t\t\t %d, %q, prevLogIndex: %d, pregLogTerm: %d\n", rf.me, rf.state, args.PrevLogIndex, args.PrevLogTerm)
 	// DPrintf("\t\t\t\t len(rf.log): %d, rf.log[prevlogIndex].Term: ", len(rf.log))
 	// DPrintf("\t\t\t\t log: %#v\n", rf.log)
-	if args.PrevLogIndex >= len(rf.log) || rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+	if args.PrevLogIndex >= len(rf.log) || (rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
 		reply.Term = rf.currentTerm
 		reply.Success = false
 		return
 	}
 
-	// 3. If an existing entry conflicts with a new one (same index but differnt
-	//    terms), delete the existing entry and all that follow it
 	// 4. Append any new entries not already in log
 	// at this point -
 	//   entry at PrevLogIndex.Term is equal to PrevLogTerm
@@ -189,6 +196,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		newEntriesIndex++
 	}
 	if newEntriesIndex < len(args.Entries) {
+		// DPrintf("\t\t\t %d append entries %#v\n", rf.me, args.Entries)
 		rf.log = append(rf.log[:logInsertIndex], args.Entries[newEntriesIndex:]...)
 	}
 

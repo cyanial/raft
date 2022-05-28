@@ -3,7 +3,7 @@ package raft
 import "log"
 
 // Debugging
-const Debug = false
+var Debug bool = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -28,7 +28,7 @@ func (rf *Raft) getLastLogTerm() int {
 }
 
 func (rf *Raft) getLastLogTermAndIndex() (int, int) {
-	return rf.getLastLogIndex(), rf.getLastLogTerm()
+	return rf.getLastLogTerm(), rf.getLastLogIndex()
 }
 
 func (rf *Raft) becomeCandidate() {

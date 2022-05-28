@@ -97,12 +97,9 @@ type Raft struct {
 
 func (rf *Raft) Report() {
 	// someone has already lock
-	DPrintf("id:%d, %10s, term: %d, votedFor: %d, commitIndex: %d, lastApplied: %d\n",
-		rf.me, rf.state, rf.currentTerm, rf.votedFor, rf.commitIndex, rf.lastApplied)
-
-	// if rf.state == Leader {
-	// 	DPrintf("\t\tnext: %#v, match: %#v\n", rf.nextIndex, rf.matchIndex)
-	// }
+	DPrintf("id:%d, %10s, term: %d, commitIndex: %d, lastApplied: %d %v %v\n",
+		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.nextIndex, rf.matchIndex)
+	DPrintf("------------- id: %d, log: %d\n", rf.me, len(rf.log[1:]))
 }
 
 // return currentTerm and whether this server
@@ -149,6 +146,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 		Command: command,
 	})
+	DPrintf("\t\t\t Start new command %v\n", command)
 
 	return index, term, true
 }
@@ -341,16 +339,17 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 			args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
 			args.Entries = rf.log[args.PrevLogIndex+1:]
 			args.LeaderCommit = rf.commitIndex
-			DPrintf("\t\t\t %d %q send heart beat to %d, prevLogIndex: %d, prevLogTerm: %d\n",
-				rf.me, rf.state, id, args.PrevLogIndex, args.PrevLogTerm)
-			DPrintf("\t\t\t\t %#v\n", args.Entries)
-			DPrintf("\t\t\t\t nextIndex: %#v matchIndex: %#v\n", rf.nextIndex, rf.matchIndex)
+			// DPrintf("\t\t\t Heartbeat** %d %q to %d, prevLogIndex: %d, prevLogTerm: %d\n",
+			// rf.me, rf.state, id, args.PrevLogIndex, args.PrevLogTerm)
+			// DPrintf("\t\t\t\t %#v\n", args.Entries)
+			// DPrintf("\t\t\t\t nextIndex: %#v matchIndex: %#v\n", rf.nextIndex, rf.matchIndex)
 			rf.mu.Unlock()
 
 			reply := &AppendEntriesReply{}
 			ok := rf.sendAppendEntries(id, args, reply)
 			if !ok {
-				// DPrintf("send append entries false")
+				// DPrintf("\t\t\t send append entries false")
+				return
 			}
 
 			rf.mu.Lock()
@@ -397,6 +396,13 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 					rf.newCommitCh <- struct{}{}
 				}
 			} else {
+				// optimized: reduce the number of rejected AppendEntries RPCs.
+				// - The follower can include the term of the conflicting entry
+				//   and the first index it stores for that term.
+				// - The leader can decrement nextIndex to bypass all of the
+				//   conflicting entries in that term.
+				// one AppendEntries RPC will be required for each term with
+				// conflicting entries, rather than one PRC per entry.
 				if nextIndex > 1 {
 					rf.nextIndex[id] = nextIndex - 1
 				}
@@ -415,7 +421,7 @@ func (rf *Raft) applier() {
 	for rf.killed() == false {
 		for range rf.newCommitCh {
 			rf.mu.Lock()
-			DPrintf("\t\t\trf.applier(), %d %q\n", rf.me, rf.state)
+			// DPrintf("\t\t\trf.applier(), %d %q\n", rf.me, rf.state)
 
 			savedLastApplied := rf.lastApplied
 			var entries []LogEntry
@@ -424,7 +430,6 @@ func (rf *Raft) applier() {
 				rf.lastApplied = rf.commitIndex
 			}
 			rf.mu.Unlock()
-
 			for i, entry := range entries {
 				rf.applyCh <- ApplyMsg{
 					CommandValid: true,
@@ -432,6 +437,7 @@ func (rf *Raft) applier() {
 					Command:      entry.Command,
 				}
 			}
+
 		}
 	}
 }
