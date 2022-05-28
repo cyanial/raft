@@ -1,5 +1,17 @@
 package raft
 
+import (
+	"bytes"
+
+	"github.com/cyanial/raft/labgob"
+)
+
+type PersistState struct {
+	currentTerm int
+	voteFor     int
+	log         []LogEntry
+}
+
 //
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
@@ -8,21 +20,50 @@ package raft
 func (rf *Raft) persist() {
 	// Your code here (2C).
 	// Example:
-	// w := new(bytes.Buffer)
-	// e L= labgob.NewEncoder
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+
+	rf.mu.Lock()
+	rf.mu.Unlock()
+
+	persistState := PersistState{
+		currentTerm: rf.currentTerm,
+		voteFor:     rf.votedFor,
+		log:         rf.log,
+	}
+	err := e.Encode(persistState)
+	if err != nil {
+		DPrintf("rf.persisit() encode error: %v\n", err)
+		return
+	}
+	rf.persister.SaveRaftState(w.Bytes())
 }
 
 //
 // restore previously persisted state.
 //
-func (rt *Raft) readPersist(data []byte) {
+func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
 	// Your code here (2C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+
+	var persistState PersistState
+	err := d.Decode(&persistState)
+	if err != nil {
+		DPrintf("rf.readPersist() error: %v\n", err)
+		return
+	}
+
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
+	rf.currentTerm = persistState.currentTerm
+	rf.votedFor = persistState.voteFor
+	rf.log = persistState.log
+
 	// var xxx
 	// var yyy
 	// if d.Decode(&xxx) != nil ||
