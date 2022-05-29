@@ -133,6 +133,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	// is not leader, return false
 	if rf.state != Leader {
@@ -196,6 +197,7 @@ func (rf *Raft) ticker() {
 				go rf.startElection(rf.currentTerm)
 			}
 		}
+		rf.persist()
 		rf.mu.Unlock()
 	}
 }
@@ -209,6 +211,7 @@ func (rf *Raft) startElection(electionTerm int) {
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	if rf.state != Candidate || rf.currentTerm != electionTerm {
 		return
@@ -258,6 +261,7 @@ func (rf *Raft) startElection(electionTerm int) {
 					rf.state = Follower
 					rf.votedFor = -1
 				}
+				rf.persist()
 				rf.mu.Unlock()
 			}
 		}(i)
@@ -276,6 +280,8 @@ func (rf *Raft) checkVotes(receiveMajority chan bool, electionTerm int) {
 	case <-receiveMajority:
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
+		defer rf.persist()
+
 		if rf.state != Candidate || rf.currentTerm != electionTerm {
 			return
 		}
@@ -291,6 +297,8 @@ func (rf *Raft) checkVotes(receiveMajority chan bool, electionTerm int) {
 	case <-time.After(time.Duration(400+(rand.Int63()%150)) * time.Millisecond):
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
+		defer rf.persist()
+
 		if rf.state != Candidate || rf.currentTerm != electionTerm {
 			return
 		}
@@ -354,6 +362,7 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
+			defer rf.persist()
 
 			if rf.state != Leader {
 				return

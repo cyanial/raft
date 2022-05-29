@@ -48,6 +48,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	// 1. Reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
@@ -138,6 +139,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	// 1. Reply false if term < currentTerm
 	if args.Term < rf.currentTerm {

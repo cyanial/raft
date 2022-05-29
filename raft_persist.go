@@ -7,9 +7,9 @@ import (
 )
 
 type PersistState struct {
-	currentTerm int
-	voteFor     int
-	log         []LogEntry
+	CurrentTerm int
+	VoteFor     int
+	Log         []LogEntry
 }
 
 //
@@ -23,13 +23,13 @@ func (rf *Raft) persist() {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
 
-	rf.mu.Lock()
-	rf.mu.Unlock()
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
 
 	persistState := PersistState{
-		currentTerm: rf.currentTerm,
-		voteFor:     rf.votedFor,
-		log:         rf.log,
+		CurrentTerm: rf.currentTerm,
+		VoteFor:     rf.votedFor,
+		Log:         rf.log,
 	}
 	err := e.Encode(persistState)
 	if err != nil {
@@ -60,9 +60,9 @@ func (rf *Raft) readPersist(data []byte) {
 
 	// rf.mu.Lock()
 	// defer rf.mu.Unlock()
-	rf.currentTerm = persistState.currentTerm
-	rf.votedFor = persistState.voteFor
-	rf.log = persistState.log
+	rf.currentTerm = persistState.CurrentTerm
+	rf.votedFor = persistState.VoteFor
+	rf.log = persistState.Log
 
 	// var xxx
 	// var yyy
