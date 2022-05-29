@@ -64,6 +64,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		if rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
 			rf.votedFor = args.CandidateId
 			reply.VoteGranted = true
+			rf.lastHeartbeatTime = time.Now()
 		} else {
 			rf.votedFor = -1
 			reply.VoteGranted = false
@@ -80,6 +81,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
 		rf.votedFor = args.CandidateId
 		reply.VoteGranted = true
+		rf.lastHeartbeatTime = time.Now()
 	} else {
 		rf.votedFor = -1
 	}
