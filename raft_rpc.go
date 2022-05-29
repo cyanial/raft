@@ -176,6 +176,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.PrevLogIndex >= len(rf.log) || (rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
 		reply.Term = rf.currentTerm
 		reply.Success = false
+		if args.PrevLogIndex < len(rf.log) {
+			rf.log = rf.log[:args.PrevLogIndex]
+		}
 		return
 	}
 
@@ -185,22 +188,23 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// Find an insertion point -
 	//   where there's a term mismatch between the existing long starting at
 	//   PrevLogIndex+1 and the new entries sent in the RPC.
-	logInsertIndex := args.PrevLogIndex + 1
-	newEntriesIndex := 0
-	for {
-		if logInsertIndex >= len(rf.log) || newEntriesIndex >= len(args.Entries) {
-			break
-		}
-		if rf.log[logInsertIndex].Term != args.Entries[newEntriesIndex].Term {
-			break
-		}
-		logInsertIndex++
-		newEntriesIndex++
-	}
-	if newEntriesIndex < len(args.Entries) {
-		// DPrintf("\t\t\t %d append entries %#v\n", rf.me, args.Entries)
-		rf.log = append(rf.log[:logInsertIndex], args.Entries[newEntriesIndex:]...)
-	}
+	// logInsertIndex := args.PrevLogIndex + 1
+	// newEntriesIndex := 0
+	// for {
+	// 	if logInsertIndex >= len(rf.log) || newEntriesIndex >= len(args.Entries) {
+	// 		break
+	// 	}
+	// 	if rf.log[logInsertIndex].Term != args.Entries[newEntriesIndex].Term {
+	// 		break
+	// 	}
+	// 	logInsertIndex++
+	// 	newEntriesIndex++
+	// }
+	// if newEntriesIndex < len(args.Entries) {
+	// 	// DPrintf("\t\t\t %d append entries %#v\n", rf.me, args.Entries)
+	// 	rf.log = append(rf.log[:logInsertIndex], args.Entries[newEntriesIndex:]...)
+	// }
+	rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
 
 	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit,
 	// 	  index of last new entry)
