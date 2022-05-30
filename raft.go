@@ -285,12 +285,16 @@ func (rf *Raft) checkVotes(receiveMajority chan bool, electionTerm int) {
 			return
 		}
 		rf.state = Leader
-		for i := range rf.nextIndex {
+		for i := 0; i < len(rf.peers); i++ {
 			rf.nextIndex[i] = len(rf.log)
-		}
-		for i := range rf.matchIndex {
 			rf.matchIndex[i] = 0
 		}
+		// for i := range rf.nextIndex {
+		// 	rf.nextIndex[i] = len(rf.log)
+		// }
+		// for i := range rf.matchIndex {
+		// 	rf.matchIndex[i] = 0
+		// }
 		// send heartbeat
 		go rf.sendHeartbeat(rf.currentTerm)
 	case <-time.After(time.Duration(400+(rand.Int63()%150)) * time.Millisecond):

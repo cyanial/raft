@@ -1,12 +1,14 @@
 package raft
 
-import "log"
+import (
+	"log"
+)
 
 // Debugging
-var Debug bool = true
+var debug bool = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug {
+	if debug {
 		log.Printf(format, a...)
 	}
 	return
