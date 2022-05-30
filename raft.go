@@ -97,9 +97,8 @@ type Raft struct {
 
 func (rf *Raft) Report() {
 	// someone has already lock
-	DPrintf("id:%d, %10s, term: %d, commitIndex: %d, lastApplied: %d %v %v\n",
-		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.nextIndex, rf.matchIndex)
-	DPrintf("------------- id: %d, log: %d\n", rf.me, len(rf.log[1:]))
+	DPrintf("id:%d, %10s, term: %d, commitIndex: %d, lastApplied: %d %v %v\n\t\t    id:%d, log: %d, votedFor: %d\n",
+		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.nextIndex, rf.matchIndex, rf.me, len(rf.log[1:]), rf.votedFor)
 }
 
 // return currentTerm and whether this server
@@ -195,9 +194,9 @@ func (rf *Raft) ticker() {
 				rf.state = Candidate
 				rf.currentTerm++
 				go rf.startElection(rf.currentTerm)
+				rf.persist()
 			}
 		}
-		rf.persist()
 		rf.mu.Unlock()
 	}
 }
@@ -260,8 +259,8 @@ func (rf *Raft) startElection(electionTerm int) {
 					rf.currentTerm = reply.Term
 					rf.state = Follower
 					rf.votedFor = -1
+					rf.persist()
 				}
-				rf.persist()
 				rf.mu.Unlock()
 			}
 		}(i)
@@ -345,7 +344,10 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 			args.LeaderId = rf.me
 			args.PrevLogIndex = nextIndex - 1
 			args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
-			args.Entries = rf.log[args.PrevLogIndex+1:]
+			// args.Entries = rf.log[args.PrevLogIndex+1:]
+			args.Entries = make([]LogEntry, len(rf.log[args.PrevLogIndex+1:]))
+			copy(args.Entries, rf.log[args.PrevLogIndex+1:])
+
 			args.LeaderCommit = rf.commitIndex
 			// DPrintf("\t\t\t Heartbeat** %d %q to %d, prevLogIndex: %d, prevLogTerm: %d\n",
 			// rf.me, rf.state, id, args.PrevLogIndex, args.PrevLogTerm)
@@ -415,6 +417,19 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 				if nextIndex > 1 {
 					rf.nextIndex[id] = nextIndex - 1
 				}
+
+				// findTerm := false
+				// for i, l := range rf.log {
+				// 	if reply.ConflictTerm == l.Term {
+				// 		findTerm = true
+				// 		rf.nextIndex[id] = i + 1
+				// 	}
+				// }
+
+				// if findTerm == false {
+				// 	rf.nextIndex[id] = reply.ConflictIndex
+				// }
+
 			}
 		}(i)
 	}

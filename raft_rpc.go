@@ -48,7 +48,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer rf.persist()
 
 	// 1. Reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
@@ -56,6 +55,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = false
 		return
 	}
+
+	defer rf.persist()
 
 	// args.Term > rf.currentTerm
 	if args.Term > rf.currentTerm {
@@ -66,7 +67,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			reply.VoteGranted = true
 			rf.lastHeartbeatTime = time.Now()
 		} else {
-			rf.votedFor = -1
+			// rf.votedFor = -1
 			reply.VoteGranted = false
 		}
 		return
@@ -83,7 +84,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 		rf.lastHeartbeatTime = time.Now()
 	} else {
-		rf.votedFor = -1
+		// rf.votedFor = -1
 	}
 
 }
@@ -128,8 +129,8 @@ type AppendEntriesReply struct {
 
 	// Optimized:
 	// Term of the conflicting entry and the first index it stores for that term
-	// ConflictTerm int
-	// FirstIndex   int
+	ConflictTerm  int
+	ConflictIndex int
 }
 
 //
@@ -141,7 +142,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer rf.persist()
 
 	// 1. Reply false if term < currentTerm
 	if args.Term < rf.currentTerm {
@@ -150,6 +150,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
+	defer rf.persist()
+
 	rf.lastHeartbeatTime = time.Now()
 
 	if args.Term > rf.currentTerm {
@@ -157,7 +159,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	rf.state = Follower
-	rf.votedFor = args.LeaderId
+	// rf.votedFor = args.LeaderId
 
 	// args.Term == rf.currentTerm
 	// no new this is heartbeat
@@ -181,6 +183,20 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		if args.PrevLogIndex < len(rf.log) {
 			rf.log = rf.log[:args.PrevLogIndex]
 		}
+		// if args.PrevLogIndex < len(rf.log) {
+		// 	reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+		// 	// find first index which term equals to confilctTerm
+		// 	reply.ConflictIndex = args.PrevLogIndex
+		// 	for i := args.PrevLogIndex; i > 0; i-- {
+		// 		if rf.log[i-1].Term == reply.ConflictTerm {
+		// 			reply.ConflictIndex = i
+		// 		}
+		// 	}
+		// 	rf.log = rf.log[:reply.ConflictIndex]
+		// } else {
+		// 	reply.ConflictIndex = len(rf.log)
+		// 	reply.ConflictTerm = -2
+		// }
 		return
 	}
 
