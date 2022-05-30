@@ -252,8 +252,7 @@ func (rf *Raft) startElection(electionTerm int) {
 				mu_votes.Unlock()
 			} else {
 				// To-do:
-				// turn to follower and update with
-				// reply.Term
+				// turn to follower and update with reply.Term
 				rf.mu.Lock()
 				if reply.Term > rf.currentTerm {
 					rf.currentTerm = reply.Term
@@ -289,12 +288,7 @@ func (rf *Raft) checkVotes(receiveMajority chan bool, electionTerm int) {
 			rf.nextIndex[i] = len(rf.log)
 			rf.matchIndex[i] = 0
 		}
-		// for i := range rf.nextIndex {
-		// 	rf.nextIndex[i] = len(rf.log)
-		// }
-		// for i := range rf.matchIndex {
-		// 	rf.matchIndex[i] = 0
-		// }
+
 		// send heartbeat
 		go rf.sendHeartbeat(rf.currentTerm)
 	case <-time.After(time.Duration(400+(rand.Int63()%150)) * time.Millisecond):
@@ -348,15 +342,9 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 			args.LeaderId = rf.me
 			args.PrevLogIndex = nextIndex - 1
 			args.PrevLogTerm = rf.log[args.PrevLogIndex].Term
-			// args.Entries = rf.log[args.PrevLogIndex+1:]
-			args.Entries = make([]LogEntry, len(rf.log[args.PrevLogIndex+1:]))
-			copy(args.Entries, rf.log[args.PrevLogIndex+1:])
-
+			args.Entries = make([]LogEntry, len(rf.log[nextIndex:]))
+			copy(args.Entries, rf.log[nextIndex:])
 			args.LeaderCommit = rf.commitIndex
-			// DPrintf("\t\t\t Heartbeat** %d %q to %d, prevLogIndex: %d, prevLogTerm: %d\n",
-			// rf.me, rf.state, id, args.PrevLogIndex, args.PrevLogTerm)
-			// DPrintf("\t\t\t\t %#v\n", args.Entries)
-			// DPrintf("\t\t\t\t nextIndex: %#v matchIndex: %#v\n", rf.nextIndex, rf.matchIndex)
 			rf.mu.Unlock()
 
 			reply := &AppendEntriesReply{}
@@ -407,7 +395,6 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 					}
 				}
 				if rf.commitIndex != savedCommitIndex {
-					// DPrintf("\t\t\t %d %q newCommitCh\n", rf.me, rf.state)
 					rf.newCommitCh <- struct{}{}
 				}
 			} else {

@@ -159,24 +159,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	rf.state = Follower
-	// rf.votedFor = args.LeaderId
-
-	// args.Term == rf.currentTerm
-	// no new this is heartbeat
-	// if args.PrevLogIndex == len(rf.log)-1 && rf.log[args.PrevLogIndex].Term == args.PrevLogTerm {
-	// 	reply.Term = rf.currentTerm
-	// 	reply.Success = true
-	// 	return
-	// }
 
 	// 2. Reply false if log doesn't contain an entry at prevLogIndex whose
 	//    term matches prevLogTerm
 	// 3. If an existing entry conflicts with a new one (same index but differnt
 	//    terms), delete the existing entry and all that follow it
 
-	// DPrintf("\t\t\t %d, %q, prevLogIndex: %d, pregLogTerm: %d\n", rf.me, rf.state, args.PrevLogIndex, args.PrevLogTerm)
-	// DPrintf("\t\t\t\t len(rf.log): %d, rf.log[prevlogIndex].Term: ", len(rf.log))
-	// DPrintf("\t\t\t\t log: %#v\n", rf.log)
 	if args.PrevLogIndex >= len(rf.log) || (rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
 		reply.Term = rf.currentTerm
 		reply.Success = false
@@ -201,27 +189,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// 4. Append any new entries not already in log
-	// at this point -
-	//   entry at PrevLogIndex.Term is equal to PrevLogTerm
-	// Find an insertion point -
-	//   where there's a term mismatch between the existing long starting at
-	//   PrevLogIndex+1 and the new entries sent in the RPC.
-	// logInsertIndex := args.PrevLogIndex + 1
-	// newEntriesIndex := 0
-	// for {
-	// 	if logInsertIndex >= len(rf.log) || newEntriesIndex >= len(args.Entries) {
-	// 		break
-	// 	}
-	// 	if rf.log[logInsertIndex].Term != args.Entries[newEntriesIndex].Term {
-	// 		break
-	// 	}
-	// 	logInsertIndex++
-	// 	newEntriesIndex++
-	// }
-	// if newEntriesIndex < len(args.Entries) {
-	// 	// DPrintf("\t\t\t %d append entries %#v\n", rf.me, args.Entries)
-	// 	rf.log = append(rf.log[:logInsertIndex], args.Entries[newEntriesIndex:]...)
-	// }
 	rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
 
 	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit,
