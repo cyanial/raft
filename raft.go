@@ -97,8 +97,9 @@ type Raft struct {
 
 func (rf *Raft) Report() {
 	// someone has already lock
-	DPrintf("id:%d, %10s, term: %d, commitIndex: %d, lastApplied: %d %v %v\n\t\t    id:%d, log: %d, votedFor: %d\n",
-		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.nextIndex, rf.matchIndex, rf.me, len(rf.log[1:]), rf.votedFor)
+	DPrintf("[%d %9s], term:%d, comIdx:%d, lasApp:%d, votFor:%2d, log:%d N,M:%v%v",
+		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.votedFor,
+		len(rf.log), rf.nextIndex, rf.matchIndex)
 }
 
 // return currentTerm and whether this server
@@ -146,6 +147,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 		Command: command,
 	})
+
+	// For better display
+	rf.nextIndex[rf.me] = len(rf.log)
+	rf.matchIndex[rf.me] = len(rf.log) - 1
 	DPrintf("\t\t\t Start new command %v\n", command)
 
 	return index, term, true
@@ -358,10 +363,6 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 			defer rf.mu.Unlock()
 			defer rf.persist()
 
-			if rf.state != Leader {
-				return
-			}
-
 			if rf.currentTerm < reply.Term {
 				rf.state = Follower
 				rf.votedFor = -1
@@ -369,6 +370,9 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 				return
 			}
 
+			if rf.state != Leader {
+				return
+			}
 			// State == Leader, CurrentTerm >= reply.Term
 			//                              ^
 			//                            not possible
@@ -405,22 +409,13 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 				//   conflicting entries in that term.
 				// one AppendEntries RPC will be required for each term with
 				// conflicting entries, rather than one PRC per entry.
-				if nextIndex > 1 {
-					rf.nextIndex[id] = nextIndex - 1
+				// if nextIndex > 1 {
+				// 	rf.nextIndex[id] = nextIndex - 1
+				// }
+				for nextIndex > 1 && rf.log[nextIndex-1].Term == args.PrevLogTerm {
+					nextIndex--
 				}
-
-				// findTerm := false
-				// for i, l := range rf.log {
-				// 	if reply.ConflictTerm == l.Term {
-				// 		findTerm = true
-				// 		rf.nextIndex[id] = i + 1
-				// 	}
-				// }
-
-				// if findTerm == false {
-				// 	rf.nextIndex[id] = reply.ConflictIndex
-				// }
-
+				rf.nextIndex[id] = nextIndex
 			}
 		}(i)
 	}

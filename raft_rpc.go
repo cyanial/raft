@@ -129,8 +129,8 @@ type AppendEntriesReply struct {
 
 	// Optimized:
 	// Term of the conflicting entry and the first index it stores for that term
-	ConflictTerm  int
-	ConflictIndex int
+	// ConflictTerm  int
+	// ConflictIndex int
 }
 
 //
