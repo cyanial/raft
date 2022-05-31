@@ -6,8 +6,26 @@ import (
 
 // Debugging
 var (
-	debug bool = true
+	debug bool = false
 )
+
+// Color for better debug
+const colorReset string = "\033[0m"
+
+var color = []string{
+	"\033[31m",
+	"\033[32m",
+	"\033[33m",
+	"\033[34m",
+	"\033[35m",
+	"\033[36m",
+	"\033[37m",
+	"\033[38m",
+	"\033[39m",
+	"\033[40m",
+	"\033[41m",
+	"\033[42m",
+}
 
 func init() {
 	log.SetFlags(log.Ltime)
@@ -37,12 +55,6 @@ func (rf *Raft) getLastLogTerm() int {
 
 func (rf *Raft) getLastLogTermAndIndex() (int, int) {
 	return rf.getLastLogTerm(), rf.getLastLogIndex()
-}
-
-func (rf *Raft) becomeCandidate() {
-	rf.state = Candidate
-	rf.currentTerm++
-	rf.votedFor = rf.me
 }
 
 func (rf *Raft) becomeFollower(term int) {

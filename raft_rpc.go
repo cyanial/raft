@@ -58,35 +58,25 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	defer rf.persist()
 
-	// args.Term > rf.currentTerm
 	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
-		reply.Term = args.Term
-		if rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
-			rf.votedFor = args.CandidateId
-			reply.VoteGranted = true
-			rf.lastHeartbeatTime = time.Now()
-		} else {
-			// rf.votedFor = -1
-			reply.VoteGranted = false
-		}
-		return
+		rf.becomeFollower(args.Term)
 	}
 
 	// 2. If votedFor is null or candidateId, and candidate's log is at least
 	//    as up-to-date as receiver'log, grant vote.
+	reply.Term = args.Term
 	reply.VoteGranted = false
-	reply.Term = rf.currentTerm
 
-	if rf.votedFor == -1 || rf.votedFor == args.CandidateId &&
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
 		rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
-		rf.votedFor = args.CandidateId
+		DPrintf("\t\t %d vote for %d, vf: %d,\n\t\t args(T,I):%d,%d my(T,I):%d,%d",
+			rf.me, args.CandidateId, rf.votedFor,
+			args.LastLogTerm, args.LastLogIndex,
+			rf.getLastLogTerm(), rf.getLastLogIndex())
 		reply.VoteGranted = true
+		rf.votedFor = args.CandidateId
 		rf.lastHeartbeatTime = time.Now()
-	} else {
-		// rf.votedFor = -1
 	}
-
 }
 
 //
@@ -129,8 +119,8 @@ type AppendEntriesReply struct {
 
 	// Optimized:
 	// Term of the conflicting entry and the first index it stores for that term
-	// ConflictTerm  int
-	// ConflictIndex int
+	ConflictTerm  int
+	ConflictIndex int
 }
 
 //
@@ -154,37 +144,41 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.lastHeartbeatTime = time.Now()
 
-	if args.Term > rf.currentTerm {
-		rf.currentTerm = args.Term
+	// - (All Servers) If RPC request or response contains term T > currentTerm:
+	//   set currentTerm = T, convert to follower
+	// - (Candidates) If AppendEntries RPC received from new leader: convert
+	//   to follower
+	if args.Term > rf.currentTerm || rf.state == Candidate {
+		rf.becomeFollower(args.Term)
 	}
-
-	rf.state = Follower
 
 	// 2. Reply false if log doesn't contain an entry at prevLogIndex whose
 	//    term matches prevLogTerm
 	// 3. If an existing entry conflicts with a new one (same index but differnt
 	//    terms), delete the existing entry and all that follow it
-
 	if args.PrevLogIndex >= len(rf.log) || (rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
-		reply.Term = rf.currentTerm
+		reply.Term = args.Term
 		reply.Success = false
-		if args.PrevLogIndex < len(rf.log) {
-			rf.log = rf.log[:args.PrevLogIndex]
+
+		// - If a follower does not have prevLogIndex in its log, it should return
+		//   with conflictIndex = len(log) and conflictTerm = None
+		// - If a follower does have prevLogIndex in its log, but the term does not
+		//   match, it should return conflictTerm = log[prevLogIndex].Term, and
+		//   then search its log for the first index whose entry has term equal
+		//   to conflictTerm
+		if args.PrevLogIndex >= len(rf.log) {
+			reply.ConflictIndex = len(rf.log)
+			reply.ConflictTerm = -1
+		} else {
+			reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+			for i, l := range rf.log {
+				if l.Term == reply.ConflictTerm {
+					reply.ConflictIndex = i
+					break
+				}
+			}
+			rf.log = rf.log[:reply.ConflictIndex]
 		}
-		// if args.PrevLogIndex < len(rf.log) {
-		// 	reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
-		// 	// find first index which term equals to confilctTerm
-		// 	reply.ConflictIndex = args.PrevLogIndex
-		// 	for i := args.PrevLogIndex; i > 0; i-- {
-		// 		if rf.log[i-1].Term == reply.ConflictTerm {
-		// 			reply.ConflictIndex = i
-		// 		}
-		// 	}
-		// 	rf.log = rf.log[:reply.ConflictIndex]
-		// } else {
-		// 	reply.ConflictIndex = len(rf.log)
-		// 	reply.ConflictTerm = -2
-		// }
 		return
 	}
 
