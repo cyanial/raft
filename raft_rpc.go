@@ -201,6 +201,78 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 }
 
 //
+// example InstallSnapshot RPC args structure.
+// field names must start with capital letters!
+//
+type InstallSnapshotArgs struct {
+
+	// Leader's term
+	Term int
+
+	// So follower can redirect clients
+	LeaderId int
+
+	// The snapshot replaces all entries up
+	// through and including this index
+	LastIncludedIndex int
+
+	// Term of lastIncludeIndex
+	LastIncludedTerm int
+
+	// Byte offset where chunk is positioned
+	// in the snapshot file
+	offset int
+
+	// Raw bytes of the snapshot chunk, starting
+	// at offset
+	data []byte
+
+	// true if this is the last chunk
+	done bool
+}
+
+//
+// example InstallSnapshot RPC reply structure.
+// field names must start with capital letters!
+//
+type InstallSnapshotReply struct {
+
+	// CurrentTerm, for leader to update itself.
+	Term int
+}
+
+//
+// example InstallSnapshot RPC handler
+// Invoked by leader to send chunks of a snapshot
+// to a follower. Leaders always send chunks in order.
+//
+func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	// 1. Reply immediately if term < currentTerm
+
+	// 2. Create new snapshot file if first chunk (offset is 0)
+
+	// 3. Write data into snapshot file at given offset
+
+	// 4. Reply and wait for more data chunks if done is false
+
+	// 5. Save snapshot file, discard any existing or partial
+	//    snapshot with a smaller index
+
+	// 6. If existing log entry has same index and term as snapshot's
+	//    last included entry, retain log entries following it and
+	//    reply
+
+	// 7. Discard the entire log
+
+	// 8. Reset state machine using snapshot contents (and load
+	//    snapshot's cluster configuration)
+}
+
+//
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
 // expects RPC arguments in args.
@@ -236,5 +308,10 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
+}
+
+func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
+	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
 	return ok
 }
