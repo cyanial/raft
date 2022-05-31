@@ -2,6 +2,8 @@ package raft
 
 import (
 	"log"
+	"math/rand"
+	"time"
 )
 
 // Debugging
@@ -45,16 +47,17 @@ func min(a, b int) int {
 	return b
 }
 
+// get a random election timeout
+func randomElectionTime() time.Duration {
+	return time.Duration((200 + (rand.Int63() % 150))) * (time.Millisecond)
+}
+
 func (rf *Raft) getLastLogIndex() int {
 	return len(rf.log) - 1
 }
 
 func (rf *Raft) getLastLogTerm() int {
 	return rf.log[rf.getLastLogIndex()].Term
-}
-
-func (rf *Raft) getLastLogTermAndIndex() (int, int) {
-	return rf.getLastLogTerm(), rf.getLastLogIndex()
 }
 
 func (rf *Raft) becomeFollower(term int) {
@@ -65,6 +68,6 @@ func (rf *Raft) becomeFollower(term int) {
 
 // check if candidate's log is at least as new as the voter.
 func (rf *Raft) isUpToDate(candidateTerm int, candidateIndex int) bool {
-	term, index := rf.getLastLogTermAndIndex()
+	index, term := rf.getLastLogIndex(), rf.getLastLogTerm()
 	return candidateTerm > term || (candidateTerm == term && candidateIndex >= index)
 }

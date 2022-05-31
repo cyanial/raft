@@ -62,7 +62,7 @@ func TestReElection2A(t *testing.T) {
 	leader1 := cfg.checkOneLeader()
 
 	// if the leader disconnects, a new one should be elected.
-	DPrintf("if the leader disconnects, a new one should be elected.")
+	DPrintf("if the leader disconnects, a new one should be elected. discon %d", leader1)
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
 
@@ -71,14 +71,15 @@ func TestReElection2A(t *testing.T) {
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
-	DPrintf("the old leader rejoins, that shouldn't distrub")
+	DPrintf("the old leader rejoins, that shouldn't distrub, conn %d", leader1)
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
 	DPrintf("end - the old leader rejoins, that shouldn't distrub")
 
 	// if there's no quorum, no new leader should
 	// be elected.
-	DPrintf("no quorum, no new leader should be elected")
+	DPrintf("no quorum, no new leader should be elected, disconn %d %d",
+		leader2, (leader2+1)%servers)
 	cfg.disconnect(leader2)
 	cfg.disconnect((leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
@@ -89,7 +90,7 @@ func TestReElection2A(t *testing.T) {
 	DPrintf("end - no quorum, no new leader should be elected")
 
 	// if a quorum arises, it should elect a leader.
-	DPrintf("if a quorum arise, it should elect a leader.")
+	DPrintf("if a quorum arise, it should elect a leader. conn %d", (leader2+1)%servers)
 	cfg.connect((leader2 + 1) % servers)
 	cfg.checkOneLeader()
 	DPrintf("end - if a quorum arise, it should elect a leader.")

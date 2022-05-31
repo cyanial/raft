@@ -69,10 +69,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
 		rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
-		DPrintf("\t\t %d vote for %d, vf: %d,\n\t\t args(T,I):%d,%d my(T,I):%d,%d",
-			rf.me, args.CandidateId, rf.votedFor,
-			args.LastLogTerm, args.LastLogIndex,
-			rf.getLastLogTerm(), rf.getLastLogIndex())
+
+		DPrintf("%s\t\t Msg: %d grant vote to %d \n%s",
+			color[rf.me], rf.me, args.CandidateId, colorReset)
+
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
 		rf.lastHeartbeatTime = time.Now()
@@ -142,13 +142,15 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	defer rf.persist()
 
-	rf.lastHeartbeatTime = time.Now()
-
 	// - (All Servers) If RPC request or response contains term T > currentTerm:
 	//   set currentTerm = T, convert to follower
+	if args.Term > rf.currentTerm {
+		rf.becomeFollower(args.Term)
+	}
+
 	// - (Candidates) If AppendEntries RPC received from new leader: convert
 	//   to follower
-	if args.Term > rf.currentTerm || rf.state == Candidate {
+	if rf.state == Candidate {
 		rf.becomeFollower(args.Term)
 	}
 
@@ -177,8 +179,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 					break
 				}
 			}
-			rf.log = rf.log[:reply.ConflictIndex]
+			// rf.log = rf.log[:reply.ConflictIndex]
 		}
+		rf.lastHeartbeatTime = time.Now()
 		return
 	}
 
@@ -192,6 +195,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.newCommitCh <- struct{}{}
 	}
 
+	rf.lastHeartbeatTime = time.Now()
 	reply.Term = rf.currentTerm
 	reply.Success = true
 }
