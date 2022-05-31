@@ -37,7 +37,7 @@ ok  	github.com/cyanial/raft	13.800s
 
 real	0m14.123s
 user	0m1.611s
-sys	    0m0.716s
+sys     0m0.716s
  ```
 
  ### 2B
@@ -64,7 +64,7 @@ ok  	github.com/cyanial/raft	49.590s
 
 real	0m49.914s
 user	0m7.833s
-sys	    0m1.659s
+sys     0m1.659s
 ```
  ### 2C
 
@@ -90,6 +90,6 @@ ok  	github.com/cyanial/raft	140.676s
 
 real	2m21.001s
 user	0m56.675s
-sys	    0m7.351s
+sys     0m7.351s
 ```
  ### 2D
