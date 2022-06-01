@@ -50,6 +50,9 @@ func (rf *Raft) sendSnapshot(id int, sendSnapshotTerm int, snapshot []byte) {
 	defer rf.mu.Unlock()
 	defer rf.persist()
 
+	DPrintf("%s\t\t Msg: %d sendSnapshot to %d, lastIdx:%d, lastTerm:%d %s",
+		color[rf.me], rf.me, id, rf.logBase, rf.log[0].Term, colorReset)
+
 	args := &InstallSnapshotArgs{
 		Term:              sendSnapshotTerm,
 		LeaderId:          rf.me,
@@ -71,5 +74,4 @@ func (rf *Raft) sendSnapshot(id int, sendSnapshotTerm int, snapshot []byte) {
 
 	rf.nextIndex[id] = args.LastIncludedIndex + 1
 	rf.matchIndex[id] = args.LastIncludedIndex
-
 }

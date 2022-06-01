@@ -254,41 +254,46 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	DPrintf("%s\t\t Msg: %d InstallSnapshot %s",
+		color[rf.me], rf.me, colorReset)
+
 	// 1. Reply immediately if term < currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
+		// rf.mu.Unlock()
 		return
 	}
+
+	rf.lastHeartbeatTime = time.Now()
 
 	if args.Term > rf.currentTerm || rf.state == Candidate {
 		rf.becomeFollower(args.Term)
 		rf.persist()
 	}
 
-	reply.Term = rf.currentTerm
+	reply.Term = args.Term
 
 	if args.LastIncludedIndex <= rf.logBase {
 		// snapshot is not up-to-date
+		// rf.mu.Unlock()
 		return
 	}
 
-	rf.lastHeartbeatTime = time.Now()
-
-	// 6. If existing log entry has same index and term as snapshot's
-	//    last included entry, retain log entries following it and
-	//    reply
-	// 7. Discard the entire log
-	// if args.LastIncludedIndex < rf.logSize() && rf.logAt(args.LastIncludedIndex).Term == args.LastIncludedTerm {
-	// 	rf.log = append([]LogEntry(nil), rf.log[args.LastIncludedIndex-rf.logBase:]...)
-	// 	rf.logBase = args.LastIncludedIndex
-	// 	rf.persistStateAndSnapshot(args.Data)
-	// } else {
-	// 	// ?
-	// 	rf.log = []LogEntry{
-	// 		{args.LastIncludedTerm, nil},
+	// go func() {
+	// 	rf.applyCh <- ApplyMsg{
+	// 		SnapshotValid: true,
+	// 		Snapshot:      args.Data,
+	// 		SnapshotTerm:  args.LastIncludedTerm,
+	// 		SnapshotIndex: args.LastIncludedIndex,
 	// 	}
-	// 	rf.persistStateAndSnapshot(args.Data)
-	// }
+	// }()
+
+	rf.applyCh <- ApplyMsg{
+		SnapshotValid: true,
+		Snapshot:      args.Data,
+		SnapshotTerm:  args.LastIncludedTerm,
+		SnapshotIndex: args.LastIncludedIndex,
+	}
 
 	if args.LastIncludedIndex < rf.logSize() &&
 		rf.logAt(args.LastIncludedIndex).Term == args.LastIncludedTerm {
@@ -300,20 +305,14 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.logBase = args.LastIncludedIndex
 	rf.commitIndex = args.LastIncludedIndex
 	rf.lastApplied = args.LastIncludedIndex
+	rf.state = Follower
+
 	rf.persistStateAndSnapshot(args.Data)
 
-	applyMsg := ApplyMsg{
-		SnapshotValid: true,
-		Snapshot:      args.Data,
-		SnapshotTerm:  args.LastIncludedTerm,
-		SnapshotIndex: args.LastIncludedIndex,
-	}
-
-	// apply with no lock
-	go func() {
-		rf.applyCh <- applyMsg
-	}()
-
+	// 6. If existing log entry has same index and term as snapshot's
+	//    last included entry, retain log entries following it and
+	//    reply
+	// 7. Discard the entire log
 }
 
 //
