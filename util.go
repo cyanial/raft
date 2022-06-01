@@ -52,12 +52,16 @@ func randomElectionTime() time.Duration {
 	return time.Duration((200 + (rand.Int63() % 150))) * (time.Millisecond)
 }
 
+func (rf *Raft) getLastLog() LogEntry {
+	return rf.log[len(rf.log)-1]
+}
+
 func (rf *Raft) getLastLogIndex() int {
-	return len(rf.log) - 1
+	return rf.logSize() - 1
 }
 
 func (rf *Raft) getLastLogTerm() int {
-	return rf.log[rf.getLastLogIndex()].Term
+	return rf.getLastLog().Term
 }
 
 func (rf *Raft) becomeFollower(term int) {
@@ -70,4 +74,19 @@ func (rf *Raft) becomeFollower(term int) {
 func (rf *Raft) isUpToDate(candidateTerm int, candidateIndex int) bool {
 	index, term := rf.getLastLogIndex(), rf.getLastLogTerm()
 	return candidateTerm > term || (candidateTerm == term && candidateIndex >= index)
+}
+
+// replace for len(rf.log)
+func (rf *Raft) logSize() int {
+	return rf.logBase + len(rf.log)
+}
+
+// replace for rf.log[i]
+func (rf *Raft) logAt(index int) LogEntry {
+	return rf.log[index-rf.logBase]
+}
+
+// replace for rf.log[i] = e
+func (rf *Raft) logSetAt(index int, e LogEntry) {
+	rf.log[index-rf.logBase] = e
 }

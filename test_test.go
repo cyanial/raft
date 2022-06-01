@@ -1139,7 +1139,8 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 	defer cfg.cleanup()
 
 	cfg.begin(name)
-
+	DPrintf("\t\t snapcommon: discon:%t,reliable:%t,crash:%t", disconnect, reliable, crash)
+	DPrintf("\t\t ****** one, retry: true")
 	cfg.one(rand.Int(), servers, true)
 	leader1 := cfg.checkOneLeader()
 
@@ -1152,20 +1153,25 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		if disconnect {
+			DPrintf("\t\t *** discon: %d, then one", victim)
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 		if crash {
+			DPrintf("\t\t *** crash: %d, then one", victim)
 			cfg.crash1(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 
 		// perhaps send enough to get a snapshot
+		DPrintf("\t\t perhaps send enough to get a snapshot")
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
 		for i := 0; i < nn; i++ {
 			cfg.rafts[sender].Start(rand.Int())
 		}
+		DPrintf("\t\t end - perhaps send enough to get a snapshot")
 
+		DPrintf("\t\t let applier threads catch up with thre Start()'s, one")
 		// let applier threads catch up with the Start()'s
 		if disconnect == false && crash == false {
 			// make sure all followers have caught up, so that
@@ -1182,11 +1188,13 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		if disconnect {
 			// reconnect a follower, who maybe behind and
 			// needs to rceive a snapshot to catch up.
+			DPrintf("\t\t recon: %d, then one", victim)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
 		if crash {
+			DPrintf("\t\t restart: %d, then one", victim)
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)

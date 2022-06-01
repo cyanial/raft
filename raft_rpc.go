@@ -158,7 +158,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//    term matches prevLogTerm
 	// 3. If an existing entry conflicts with a new one (same index but differnt
 	//    terms), delete the existing entry and all that follow it
-	if args.PrevLogIndex >= len(rf.log) || (rf.log[args.PrevLogIndex].Term != args.PrevLogTerm) {
+	if args.PrevLogIndex >= rf.logSize() || (rf.logAt(args.PrevLogIndex).Term != args.PrevLogTerm) {
 		reply.Term = args.Term
 		reply.Success = false
 
@@ -168,14 +168,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		//   match, it should return conflictTerm = log[prevLogIndex].Term, and
 		//   then search its log for the first index whose entry has term equal
 		//   to conflictTerm
-		if args.PrevLogIndex >= len(rf.log) {
-			reply.ConflictIndex = len(rf.log)
+		if args.PrevLogIndex >= rf.logSize() {
+			reply.ConflictIndex = rf.logSize()
 			reply.ConflictTerm = -1
 		} else {
-			reply.ConflictTerm = rf.log[args.PrevLogIndex].Term
+			reply.ConflictTerm = rf.logAt(args.PrevLogIndex).Term
 			for i, l := range rf.log {
 				if l.Term == reply.ConflictTerm {
-					reply.ConflictIndex = i
+					reply.ConflictIndex = i + rf.logBase
 					break
 				}
 			}
@@ -186,12 +186,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// 4. Append any new entries not already in log
-	rf.log = append(rf.log[:args.PrevLogIndex+1], args.Entries...)
+	rf.log = append(rf.log[:args.PrevLogIndex+1-rf.logBase], args.Entries...)
 
 	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit,
 	// 	  index of last new entry)
 	if args.LeaderCommit > rf.commitIndex {
-		rf.commitIndex = min(args.LeaderCommit, len(rf.log)-1)
+		rf.commitIndex = min(args.LeaderCommit, rf.logSize()-1)
 		rf.newCommitCh <- struct{}{}
 	}
 
@@ -221,14 +221,17 @@ type InstallSnapshotArgs struct {
 
 	// Byte offset where chunk is positioned
 	// in the snapshot file
-	offset int
+	// Send the entire snapshot in a single InstallSnapshot RPC.
+	// Don't implement Figure13's offset mechanism for splitting
+	// up the snapshot.
+	// Offset int
 
 	// Raw bytes of the snapshot chunk, starting
 	// at offset
-	data []byte
+	Data []byte
 
-	// true if this is the last chunk
-	done bool
+	// true if this is the last chunk (impl with no offset)
+	// Done bool
 }
 
 //
@@ -252,24 +255,65 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	defer rf.mu.Unlock()
 
 	// 1. Reply immediately if term < currentTerm
+	if args.Term < rf.currentTerm {
+		reply.Term = rf.currentTerm
+		return
+	}
 
-	// 2. Create new snapshot file if first chunk (offset is 0)
+	if args.Term > rf.currentTerm || rf.state == Candidate {
+		rf.becomeFollower(args.Term)
+		rf.persist()
+	}
 
-	// 3. Write data into snapshot file at given offset
+	reply.Term = rf.currentTerm
 
-	// 4. Reply and wait for more data chunks if done is false
+	if args.LastIncludedIndex <= rf.logBase {
+		// snapshot is not up-to-date
+		return
+	}
 
-	// 5. Save snapshot file, discard any existing or partial
-	//    snapshot with a smaller index
+	rf.lastHeartbeatTime = time.Now()
 
 	// 6. If existing log entry has same index and term as snapshot's
 	//    last included entry, retain log entries following it and
 	//    reply
-
 	// 7. Discard the entire log
+	// if args.LastIncludedIndex < rf.logSize() && rf.logAt(args.LastIncludedIndex).Term == args.LastIncludedTerm {
+	// 	rf.log = append([]LogEntry(nil), rf.log[args.LastIncludedIndex-rf.logBase:]...)
+	// 	rf.logBase = args.LastIncludedIndex
+	// 	rf.persistStateAndSnapshot(args.Data)
+	// } else {
+	// 	// ?
+	// 	rf.log = []LogEntry{
+	// 		{args.LastIncludedTerm, nil},
+	// 	}
+	// 	rf.persistStateAndSnapshot(args.Data)
+	// }
 
-	// 8. Reset state machine using snapshot contents (and load
-	//    snapshot's cluster configuration)
+	if args.LastIncludedIndex < rf.logSize() &&
+		rf.logAt(args.LastIncludedIndex).Term == args.LastIncludedTerm {
+		rf.log = append([]LogEntry(nil), rf.log[args.LastIncludedIndex-rf.logBase:]...)
+	} else {
+		rf.log = append([]LogEntry(nil), LogEntry{Term: args.LastIncludedTerm})
+	}
+
+	rf.logBase = args.LastIncludedIndex
+	rf.commitIndex = args.LastIncludedIndex
+	rf.lastApplied = args.LastIncludedIndex
+	rf.persistStateAndSnapshot(args.Data)
+
+	applyMsg := ApplyMsg{
+		SnapshotValid: true,
+		Snapshot:      args.Data,
+		SnapshotTerm:  args.LastIncludedTerm,
+		SnapshotIndex: args.LastIncludedIndex,
+	}
+
+	// apply with no lock
+	go func() {
+		rf.applyCh <- applyMsg
+	}()
+
 }
 
 //

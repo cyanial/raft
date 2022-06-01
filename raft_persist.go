@@ -10,6 +10,7 @@ type PersistState struct {
 	CurrentTerm int
 	VoteFor     int
 	Log         []LogEntry
+	LogBase     int
 }
 
 //
@@ -23,13 +24,13 @@ func (rf *Raft) persist() {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
 
-	// rf.mu.Lock()
-	// defer rf.mu.Unlock()
+	// the caller hold the mutex locked
 
 	persistState := PersistState{
 		CurrentTerm: rf.currentTerm,
 		VoteFor:     rf.votedFor,
 		Log:         rf.log,
+		LogBase:     rf.logBase,
 	}
 	err := e.Encode(persistState)
 	if err != nil {
@@ -58,41 +59,29 @@ func (rf *Raft) readPersist(data []byte) {
 		return
 	}
 
-	// rf.mu.Lock()
-	// defer rf.mu.Unlock()
+	// the caller hold the mutex locked
+
 	rf.currentTerm = persistState.CurrentTerm
 	rf.votedFor = persistState.VoteFor
 	rf.log = persistState.Log
-
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	rf.logBase = persistState.LogBase
 }
 
-//
-// A service wants to switch to snapshot. Only do so if Raft hasn't
-// have more recent info since it commnunicate the snapshot on applyCh.
-//
-func (rf *Raft) CondInstallSnapshot(lastIncludeTerm int, lastIncludeIndex int, snapshot []byte) bool {
+func (rf *Raft) persistStateAndSnapshot(snapshot []byte) {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
 
-	// Your code here (2D).
+	// the caller hold the mutex locked
 
-	return true
-}
-
-//
-// the service says it has created a snapshot that has
-// all info up to and including index. this means the
-// service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
-//
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (2D).
-
+	persistState := PersistState{
+		CurrentTerm: rf.currentTerm,
+		VoteFor:     rf.votedFor,
+		Log:         rf.log,
+	}
+	err := e.Encode(persistState)
+	if err != nil {
+		DPrintf("rf.persisit() encode error: %v\n", err)
+		return
+	}
+	rf.persister.SaveStateAndSnapshot(w.Bytes(), snapshot)
 }

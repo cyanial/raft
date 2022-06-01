@@ -86,6 +86,7 @@ type Raft struct {
 	currentTerm int
 	votedFor    int
 	log         []LogEntry
+	logBase     int
 
 	commitIndex int
 	lastApplied int
@@ -96,25 +97,11 @@ type Raft struct {
 
 func (rf *Raft) Report() {
 	// someone has already lock
-	DPrintf("%s[%d %9s], term:%2d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
+	DPrintf("%s[%d %9s], term:%2d,base:%d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
 		color[rf.me],
-		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.votedFor,
-		len(rf.log)-1, rf.log[len(rf.log)-1].Term, rf.nextIndex, rf.matchIndex,
+		rf.me, rf.state, rf.currentTerm, rf.logBase, rf.commitIndex, rf.lastApplied, rf.votedFor,
+		rf.logSize()-1, rf.getLastLogTerm(), rf.nextIndex, rf.matchIndex,
 		colorReset)
-
-	// if len(rf.log)-2 < 0 {
-	// 	DPrintf("%s[%d %9s], term:%2d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d %v %s",
-	// 		color[rf.me],
-	// 		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.votedFor,
-	// 		len(rf.log)-1, rf.log[len(rf.log)-1].Term, rf.log[len(rf.log)-1:],
-	// 		colorReset)
-	// } else {
-	// 	DPrintf("%s[%d %9s], term:%2d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d %v %s",
-	// 		color[rf.me],
-	// 		rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.votedFor,
-	// 		len(rf.log)-1, rf.log[len(rf.log)-1].Term, rf.log[len(rf.log)-2:],
-	// 		colorReset)
-	// }
 }
 
 // return currentTerm and whether this server
@@ -155,7 +142,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, -1, false
 	}
 
-	index := len(rf.log)
+	index := rf.logSize()
 	term := rf.currentTerm
 
 	rf.log = append(rf.log, LogEntry{
@@ -164,7 +151,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	})
 
 	DPrintf("%s\t\t Msg: %d Start new command log %v\n%s",
-		color[rf.me], rf.me, rf.log[rf.getLastLogIndex()], colorReset)
+		color[rf.me], rf.me, rf.getLastLog(), colorReset)
 
 	return index, term, true
 }
@@ -301,7 +288,7 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 		defer rf.persist()
 		rf.state = Leader
 		for i := 0; i < len(rf.peers); i++ {
-			rf.nextIndex[i] = len(rf.log)
+			rf.nextIndex[i] = rf.logSize()
 			rf.matchIndex[i] = 0
 		}
 		// send heartbeat
@@ -354,15 +341,25 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
 			rf.mu.Lock()
 			nextIndex := rf.nextIndex[id]
+
+			if nextIndex <= rf.logBase {
+				go rf.sendSnapshot(id, heartBeatTerm, rf.persister.ReadSnapshot())
+				rf.mu.Unlock()
+				return
+			}
+
+			// nextIndex > rf.logBase
+			// realIndex + rf.logBase = nextIndex
+
 			args := &AppendEntriesArgs{
 				Term:         heartBeatTerm,
 				LeaderId:     rf.me,
 				PrevLogIndex: nextIndex - 1,
-				PrevLogTerm:  rf.log[nextIndex-1].Term,
-				Entries:      make([]LogEntry, len(rf.log[nextIndex:])),
+				PrevLogTerm:  rf.logAt(nextIndex - 1).Term,
+				Entries:      make([]LogEntry, len(rf.log[nextIndex-rf.logBase:])),
 				LeaderCommit: rf.commitIndex,
 			}
-			copy(args.Entries, rf.log[nextIndex:])
+			copy(args.Entries, rf.log[nextIndex-rf.logBase:])
 			rf.mu.Unlock()
 
 			reply := &AppendEntriesReply{}
@@ -390,8 +387,8 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 				rf.matchIndex[id] = rf.nextIndex[id] - 1
 
 				savedCommitIndex := rf.commitIndex
-				for i := rf.commitIndex + 1; i < len(rf.log); i++ {
-					if rf.log[i].Term == rf.currentTerm {
+				for i := rf.commitIndex + 1; i < rf.logSize(); i++ {
+					if rf.logAt(i).Term == rf.currentTerm {
 						matchCount := 1
 						for j := 0; j < len(rf.peers); j++ {
 							if j == rf.me {
@@ -420,8 +417,8 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 					rf.nextIndex[id] = reply.ConflictIndex
 				} else {
 					found := false
-					for i := len(rf.log) - 1; i >= 0; i-- {
-						if rf.log[i].Term == reply.ConflictTerm {
+					for i := rf.logSize() - 1; i >= rf.logBase; i-- {
+						if rf.logAt(i).Term == reply.ConflictTerm {
 							rf.nextIndex[id] = i + 1
 							found = true
 							break
@@ -457,7 +454,7 @@ func (rf *Raft) applier() {
 			if rf.commitIndex > rf.lastApplied {
 				// avoid data race
 				entries = make([]LogEntry, rf.commitIndex-rf.lastApplied)
-				copy(entries, rf.log[rf.lastApplied+1:rf.commitIndex+1])
+				copy(entries, rf.log[rf.lastApplied+1-rf.logBase:rf.commitIndex+1-rf.logBase])
 				rf.lastApplied = rf.commitIndex
 			}
 			rf.mu.Unlock()
@@ -507,6 +504,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.log = []LogEntry{
 		{-1, nil},
 	}
+	rf.logBase = 0
 
 	rf.commitIndex = 0
 	rf.lastApplied = 0
