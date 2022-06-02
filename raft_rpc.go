@@ -298,7 +298,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	rf.logBase = args.LastIncludedIndex
 	rf.commitIndex = args.LastIncludedIndex
 	rf.lastApplied = args.LastIncludedIndex
-	rf.state = Follower
 
 	rf.persistStateAndSnapshot(args.Data)
 

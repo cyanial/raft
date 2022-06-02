@@ -65,8 +65,8 @@ func (rf *Raft) readPersist(data []byte) {
 	rf.votedFor = persistState.VoteFor
 	rf.log = persistState.Log
 	rf.logBase = persistState.LogBase
-	rf.commitIndex = rf.logBase
-	rf.lastApplied = rf.logBase
+	rf.commitIndex = persistState.LogBase
+	rf.lastApplied = persistState.LogBase
 }
 
 func (rf *Raft) persistStateAndSnapshot(snapshot []byte) {
@@ -79,6 +79,7 @@ func (rf *Raft) persistStateAndSnapshot(snapshot []byte) {
 		CurrentTerm: rf.currentTerm,
 		VoteFor:     rf.votedFor,
 		Log:         rf.log,
+		LogBase:     rf.logBase,
 	}
 	err := e.Encode(persistState)
 	if err != nil {
