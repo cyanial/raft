@@ -264,8 +264,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		return
 	}
 
-	rf.lastHeartbeatTime = time.Now()
-
 	if args.Term > rf.currentTerm || rf.state == Candidate {
 		rf.becomeFollower(args.Term)
 		rf.persist()
@@ -279,21 +277,16 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		return
 	}
 
-	// go func() {
-	// 	rf.applyCh <- ApplyMsg{
-	// 		SnapshotValid: true,
-	// 		Snapshot:      args.Data,
-	// 		SnapshotTerm:  args.LastIncludedTerm,
-	// 		SnapshotIndex: args.LastIncludedIndex,
-	// 	}
-	// }()
+	rf.lastHeartbeatTime = time.Now()
 
-	rf.applyCh <- ApplyMsg{
-		SnapshotValid: true,
-		Snapshot:      args.Data,
-		SnapshotTerm:  args.LastIncludedTerm,
-		SnapshotIndex: args.LastIncludedIndex,
-	}
+	go func() {
+		rf.applyCh <- ApplyMsg{
+			SnapshotValid: true,
+			Snapshot:      args.Data,
+			SnapshotTerm:  args.LastIncludedTerm,
+			SnapshotIndex: args.LastIncludedIndex,
+		}
+	}()
 
 	if args.LastIncludedIndex < rf.logSize() &&
 		rf.logAt(args.LastIncludedIndex).Term == args.LastIncludedTerm {

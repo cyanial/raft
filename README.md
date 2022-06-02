@@ -21,9 +21,9 @@
 (a) 得到大多数投票
 (b) 其他任何节点成为`leader`
  
- ## 测试结果
+## 测试结果
 
- ### 2A
+### 2A
 
  ```sh
 Test (2A): initial election ...
@@ -40,7 +40,7 @@ user	0m1.611s
 sys     0m0.716s
  ```
 
- ### 2B
+### 2B
 
 ```bash
 Test (2B): basic agreement ...
@@ -92,4 +92,26 @@ real	2m21.001s
 user	0m56.675s
 sys     0m7.351s
 ```
- ### 2D
+
+### 2D
+
+```bash
+Test (2D): snapshots basic ...
+  ... Passed --   7.1  3  138   49414  194
+Test (2D): install snapshots (disconnect) ...
+  ... Passed --  53.9  3 1214  483194  350
+Test (2D): install snapshots (disconnect+unreliable) ...
+  ... Passed --  61.4  3 1398  515575  285
+Test (2D): install snapshots (crash) ...
+  ... Passed --  39.7  3  712  367596  330
+Test (2D): install snapshots (unreliable+crash) ...
+  ... Passed --  44.0  3 1034  414136  332
+Test (2D): crash and restart all servers ...
+  ... Passed --  13.4  3  260   78156   56
+PASS
+ok  	github.com/cyanial/raft	220.629s
+
+real	3m41.212s
+user	0m14.129s
+sys     0m3.220s
+```

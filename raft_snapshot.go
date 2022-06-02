@@ -47,8 +47,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 func (rf *Raft) sendSnapshot(id int, sendSnapshotTerm int, snapshot []byte) {
 
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	defer rf.persist()
 
 	DPrintf("%s\t\t Msg: %d sendSnapshot to %d, lastIdx:%d, lastTerm:%d %s",
 		color[rf.me], rf.me, id, rf.logBase, rf.log[0].Term, colorReset)
@@ -60,12 +58,21 @@ func (rf *Raft) sendSnapshot(id int, sendSnapshotTerm int, snapshot []byte) {
 		LastIncludedTerm:  rf.log[0].Term,
 		Data:              snapshot,
 	}
+	rf.mu.Unlock()
 
 	reply := &InstallSnapshotReply{}
 	ok := rf.sendInstallSnapshot(id, args, reply)
 	if !ok {
 		return
 	}
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.state != Leader || sendSnapshotTerm != rf.currentTerm {
+		return
+	}
+
+	defer rf.persist()
 
 	if reply.Term > rf.currentTerm {
 		rf.becomeFollower(reply.Term)
