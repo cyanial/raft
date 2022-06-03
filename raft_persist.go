@@ -55,7 +55,6 @@ func (rf *Raft) readPersist(data []byte) {
 	var persistState PersistState
 	err := d.Decode(&persistState)
 	if err != nil {
-		DPrintf("rf.readPersist() error: %v\n", err)
 		return
 	}
 
@@ -83,7 +82,6 @@ func (rf *Raft) persistStateAndSnapshot(snapshot []byte) {
 	}
 	err := e.Encode(persistState)
 	if err != nil {
-		DPrintf("rf.persisit() encode error: %v\n", err)
 		return
 	}
 	rf.persister.SaveStateAndSnapshot(w.Bytes(), snapshot)

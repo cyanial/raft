@@ -97,11 +97,11 @@ type Raft struct {
 
 func (rf *Raft) Report() {
 	// someone has already lock
-	DPrintf("%s[%d %9s], term:%2d,base:%d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
-		color[rf.me],
-		rf.me, rf.state, rf.currentTerm, rf.logBase, rf.commitIndex, rf.lastApplied, rf.votedFor,
-		rf.logSize()-1, rf.getLastLogTerm(), rf.nextIndex, rf.matchIndex,
-		colorReset)
+	// DPrintf("%s[%d %9s], term:%2d,base:%d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
+	// 	color[rf.me],
+	// 	rf.me, rf.state, rf.currentTerm, rf.logBase, rf.commitIndex, rf.lastApplied, rf.votedFor,
+	// 	rf.logSize()-1, rf.getLastLogTerm(), rf.nextIndex, rf.matchIndex,
+	// 	colorReset)
 }
 
 // return currentTerm and whether this server
@@ -149,9 +149,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 		Command: command,
 	})
-
-	DPrintf("%s\t\t Msg: %d Start new command log %v\n%s",
-		color[rf.me], rf.me, rf.getLastLog(), colorReset)
 
 	return index, term, true
 }
@@ -216,9 +213,6 @@ func (rf *Raft) startElection(electionTerm int) {
 
 	rf.currentTerm++
 	rf.state = Candidate
-
-	DPrintf("%s\t\t Msg: %d startElection, term: %d\n%s",
-		color[rf.me], rf.me, rf.currentTerm, colorReset)
 
 	mu_votes := sync.Mutex{}
 	votes, voters := 1, len(rf.peers)
@@ -444,11 +438,6 @@ func (rf *Raft) applier() {
 		for range rf.newCommitCh {
 			rf.mu.Lock()
 
-			DPrintf("%s\t\t Msg: %d %q apply comIdx:%d,lasApp:%d\n%s",
-				color[rf.me],
-				rf.me, rf.state, rf.commitIndex, rf.lastApplied,
-				colorReset)
-
 			savedLastApplied := rf.lastApplied
 			var entries []LogEntry
 			if rf.commitIndex > rf.lastApplied {
@@ -524,7 +513,5 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// start applier
 	go rf.applier()
 
-	DPrintf("%sInit Raft: %d %q%s",
-		color[rf.me], rf.me, rf.state, colorReset)
 	return rf
 }

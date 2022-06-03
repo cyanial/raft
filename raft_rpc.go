@@ -70,9 +70,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
 		rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
 
-		DPrintf("%s\t\t Msg: %d grant vote to %d \n%s",
-			color[rf.me], rf.me, args.CandidateId, colorReset)
-
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
 		rf.lastHeartbeatTime = time.Now()
@@ -253,9 +250,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	DPrintf("%s\t\t Msg: %d InstallSnapshot %s",
-		color[rf.me], rf.me, colorReset)
 
 	// 1. Reply immediately if term < currentTerm
 	if args.Term < rf.currentTerm {

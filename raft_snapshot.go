@@ -28,9 +28,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	DPrintf("%s\t\t Msg: %d snapshot, idx: %d, len: %d %s",
-		color[rf.me], rf.me, index, len(snapshot), colorReset)
-
 	if index <= rf.logBase {
 		// have a snapshot
 		return
@@ -47,9 +44,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 func (rf *Raft) sendSnapshot(id int, sendSnapshotTerm int, snapshot []byte) {
 
 	rf.mu.Lock()
-
-	DPrintf("%s\t\t Msg: %d sendSnapshot to %d, lastIdx:%d, lastTerm:%d %s",
-		color[rf.me], rf.me, id, rf.logBase, rf.log[0].Term, colorReset)
 
 	args := &InstallSnapshotArgs{
 		Term:              sendSnapshotTerm,
