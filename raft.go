@@ -180,7 +180,6 @@ func (rf *Raft) ticker() {
 	for rf.killed() == false {
 
 		// random sleep time. (150ms-300ms paper recommanded)
-		// a little bit longer than recommanded (200, 400))
 		wait_time := randomElectionTime()
 		time.Sleep(wait_time)
 

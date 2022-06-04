@@ -49,7 +49,7 @@ func min(a, b int) int {
 
 // get a random election timeout
 func randomElectionTime() time.Duration {
-	return time.Duration((300 + (rand.Int63() % 400))) * (time.Millisecond)
+	return time.Duration((150 + (rand.Int63() % 150))) * (time.Millisecond)
 }
 
 func (rf *Raft) getLastLog() LogEntry {
