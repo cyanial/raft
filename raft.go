@@ -150,6 +150,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Command: command,
 	})
 
+	go rf.sendHeartbeat(term)
+
 	return index, term, true
 }
 
