@@ -150,8 +150,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Command: command,
 	})
 
-	go rf.sendHeartbeat(term)
-
 	return index, term, true
 }
 
@@ -309,7 +307,7 @@ func (rf *Raft) triggerHeartbeat() {
 		rf.mu.Lock()
 
 		// For debug
-		rf.Report()
+		// rf.Report()
 
 		if rf.state == Leader {
 			// send heartbeat
