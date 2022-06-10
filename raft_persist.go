@@ -86,3 +86,7 @@ func (rf *Raft) persistStateAndSnapshot(snapshot []byte) {
 	}
 	rf.persister.SaveStateAndSnapshot(w.Bytes(), snapshot)
 }
+
+func (rf *Raft) RaftStateSize() int {
+	return rf.persister.RaftStateSize()
+}
