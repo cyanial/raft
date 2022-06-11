@@ -80,6 +80,7 @@ type Raft struct {
 	newCommitCh chan struct{}
 
 	state             RaftType
+	heartbeatTicker   time.Ticker
 	heartbeatTimeout  time.Duration
 	lastHeartbeatTime time.Time
 
@@ -149,6 +150,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 		Command: command,
 	})
+
+	// send heartbeat
+	rf.heartbeatTicker.Reset(1)
 
 	return index, term, true
 }
@@ -285,7 +289,7 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 			rf.matchIndex[i] = 0
 		}
 		// send heartbeat
-		go rf.sendHeartbeat(rf.currentTerm)
+		rf.heartbeatTicker.Reset(1)
 
 	case <-time.After(randomElectionTime()):
 		rf.mu.Lock()
@@ -302,11 +306,10 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 // The triggerHeartbeat() send heartbeat periodically if it is a leader
 func (rf *Raft) triggerHeartbeat() {
 	for rf.killed() == false {
-		time.Sleep(rf.heartbeatTimeout)
+
+		<-rf.heartbeatTicker.C
 
 		rf.mu.Lock()
-
-		// For debug
 		// rf.Report()
 
 		if rf.state == Leader {
@@ -314,6 +317,7 @@ func (rf *Raft) triggerHeartbeat() {
 			go rf.sendHeartbeat(rf.currentTerm)
 		}
 		rf.mu.Unlock()
+		rf.heartbeatTicker.Reset(rf.heartbeatTimeout)
 	}
 }
 
@@ -334,7 +338,6 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
 			rf.mu.Lock()
 			nextIndex := rf.nextIndex[id]
-
 			if nextIndex <= rf.logBase {
 				go rf.sendSnapshot(id, heartBeatTerm, rf.persister.ReadSnapshot())
 				rf.mu.Unlock()
@@ -484,8 +487,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C)
 	rf.state = Follower
-	rf.heartbeatTimeout = 100 * time.Millisecond // must smaller than election timeout
+	rf.heartbeatTimeout = 97 * time.Millisecond // must smaller than election timeout
 	rf.lastHeartbeatTime = time.Unix(0, 0)
+	rf.heartbeatTicker = *time.NewTicker(rf.heartbeatTimeout)
 
 	rf.currentTerm = 0
 	rf.votedFor = -1
