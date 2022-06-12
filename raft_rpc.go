@@ -56,7 +56,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		return
 	}
 
-	defer rf.persist()
+	// defer rf.persist()
 
 	if args.Term > rf.currentTerm {
 		rf.becomeFollower(args.Term)
@@ -69,7 +69,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) &&
 		rf.isUpToDate(args.LastLogTerm, args.LastLogIndex) {
-
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
 		rf.lastHeartbeatTime = time.Now()
@@ -137,7 +136,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	defer rf.persist()
+	// defer rf.persist()
 
 	// - (All Servers) If RPC request or response contains term T > currentTerm:
 	//   set currentTerm = T, convert to follower
@@ -254,13 +253,12 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	// 1. Reply immediately if term < currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
-		// rf.mu.Unlock()
 		return
 	}
 
 	if args.Term > rf.currentTerm || rf.state == Candidate {
 		rf.becomeFollower(args.Term)
-		rf.persist()
+		// rf.persist()
 	}
 
 	reply.Term = args.Term
