@@ -80,7 +80,6 @@ type Raft struct {
 	newCommitCh chan struct{}
 
 	state             RaftType
-	heartbeatTicker   time.Ticker
 	heartbeatTimeout  time.Duration
 	lastHeartbeatTime time.Time
 
@@ -152,7 +151,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	})
 
 	// send heartbeat
-	rf.heartbeatTicker.Reset(1)
+	rf.sendHeartbeat(term)
 
 	return index, term, true
 }
@@ -289,7 +288,7 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 			rf.matchIndex[i] = 0
 		}
 		// send heartbeat
-		rf.heartbeatTicker.Reset(1)
+		rf.sendHeartbeat(rf.currentTerm)
 
 	case <-time.After(randomElectionTime()):
 		rf.mu.Lock()
@@ -306,29 +305,29 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 // The triggerHeartbeat() send heartbeat periodically if it is a leader
 func (rf *Raft) triggerHeartbeat() {
 	for rf.killed() == false {
-
-		<-rf.heartbeatTicker.C
+		time.Sleep(rf.heartbeatTimeout)
 
 		rf.mu.Lock()
+
+		// For debug
 		// rf.Report()
 
 		if rf.state == Leader {
 			// send heartbeat
-			go rf.sendHeartbeat(rf.currentTerm)
+			rf.sendHeartbeat(rf.currentTerm)
 		}
 		rf.mu.Unlock()
-		rf.heartbeatTicker.Reset(rf.heartbeatTimeout)
 	}
 }
 
 func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
 
-	if rf.state != Leader || heartBeatTerm != rf.currentTerm {
-		return
-	}
+	// if rf.state != Leader || heartBeatTerm != rf.currentTerm {
+	// 	return
+	// }
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
@@ -337,91 +336,126 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 		go func(id int) {
 
 			rf.mu.Lock()
-			nextIndex := rf.nextIndex[id]
-			if nextIndex <= rf.logBase {
-				go rf.sendSnapshot(id, heartBeatTerm, rf.persister.ReadSnapshot())
+			if rf.state != Leader || heartBeatTerm != rf.currentTerm {
 				rf.mu.Unlock()
 				return
 			}
 
-			// nextIndex > rf.logBase
-			// realIndex + rf.logBase = nextIndex
+			nextIndex := rf.nextIndex[id]
 
-			args := &AppendEntriesArgs{
-				Term:         heartBeatTerm,
-				LeaderId:     rf.me,
-				PrevLogIndex: nextIndex - 1,
-				PrevLogTerm:  rf.logAt(nextIndex - 1).Term,
-				Entries:      make([]LogEntry, len(rf.log[nextIndex-rf.logBase:])),
-				LeaderCommit: rf.commitIndex,
-			}
-			copy(args.Entries, rf.log[nextIndex-rf.logBase:])
-			rf.mu.Unlock()
+			if nextIndex <= rf.logBase {
 
-			reply := &AppendEntriesReply{}
-			ok := rf.sendAppendEntries(id, args, reply)
-			if !ok {
-				return
-			}
-
-			rf.mu.Lock()
-			defer rf.mu.Unlock()
-
-			if rf.state != Leader || heartBeatTerm != rf.currentTerm {
-				return
-			}
-
-			defer rf.persist()
-
-			if reply.Term > rf.currentTerm {
-				rf.becomeFollower(reply.Term)
-				return
-			}
-
-			if reply.Success {
-				rf.nextIndex[id] = nextIndex + len(args.Entries)
-				rf.matchIndex[id] = rf.nextIndex[id] - 1
-
-				savedCommitIndex := rf.commitIndex
-				for i := rf.commitIndex + 1; i < rf.logSize(); i++ {
-					if rf.logAt(i).Term == rf.currentTerm {
-						matchCount := 1
-						for j := 0; j < len(rf.peers); j++ {
-							if j == rf.me {
-								continue
-							}
-							if rf.matchIndex[j] >= i {
-								matchCount++
-							}
-						}
-						if matchCount*2 > len(rf.peers) {
-							rf.commitIndex = i
-						}
-					}
+				args := &InstallSnapshotArgs{
+					Term:              heartBeatTerm,
+					LeaderId:          rf.me,
+					LastIncludedIndex: rf.logBase,
+					LastIncludedTerm:  rf.log[0].Term,
+					Data:              rf.persister.ReadSnapshot(),
 				}
-				if rf.commitIndex != savedCommitIndex {
-					rf.newCommitCh <- struct{}{}
+				rf.mu.Unlock()
+
+				reply := &InstallSnapshotReply{}
+				ok := rf.sendInstallSnapshot(id, args, reply)
+				if !ok {
+					return
 				}
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+
+				if rf.state != Leader || heartBeatTerm != rf.currentTerm {
+					return
+				}
+
+				defer rf.persist()
+
+				if reply.Term > rf.currentTerm {
+					rf.becomeFollower(reply.Term)
+					return
+				}
+
+				rf.nextIndex[id] = args.LastIncludedIndex + 1
+				rf.matchIndex[id] = args.LastIncludedIndex
 			} else {
-				// - Upon receving a conflict response, the leader should first
-				//   search its log for conflictTerm. If it finds an entry in its
-				//   log with that term, it should set nextIndex to be the one
-				//   beyond the index of the last entry in that term in its log
-				// - If it does not find an entry with that term, it should set
-				//   nextIndex = conflictIndex
-				if reply.ConflictTerm == -1 {
-					rf.nextIndex[id] = reply.ConflictIndex
-				} else {
-					found := false
-					for i := rf.logSize() - 1; i >= rf.logBase; i-- {
-						if rf.logAt(i).Term == reply.ConflictTerm {
-							rf.nextIndex[id] = i + 1
-							found = true
-							break
+
+				// nextIndex > rf.logBase
+				// realIndex + rf.logBase = nextIndex
+
+				args := &AppendEntriesArgs{
+					Term:         heartBeatTerm,
+					LeaderId:     rf.me,
+					PrevLogIndex: nextIndex - 1,
+					PrevLogTerm:  rf.logAt(nextIndex - 1).Term,
+					Entries:      make([]LogEntry, len(rf.log[nextIndex-rf.logBase:])),
+					LeaderCommit: rf.commitIndex,
+				}
+				copy(args.Entries, rf.log[nextIndex-rf.logBase:])
+				rf.mu.Unlock()
+
+				reply := &AppendEntriesReply{}
+				ok := rf.sendAppendEntries(id, args, reply)
+				if !ok {
+					return
+				}
+
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+
+				if rf.state != Leader || heartBeatTerm != rf.currentTerm {
+					return
+				}
+
+				defer rf.persist()
+
+				if reply.Term > rf.currentTerm {
+					rf.becomeFollower(reply.Term)
+					return
+				}
+
+				if reply.Success {
+					rf.nextIndex[id] = nextIndex + len(args.Entries)
+					rf.matchIndex[id] = rf.nextIndex[id] - 1
+
+					savedCommitIndex := rf.commitIndex
+					for i := rf.commitIndex + 1; i < rf.logSize(); i++ {
+						if rf.logAt(i).Term == rf.currentTerm {
+							matchCount := 1
+							for j := 0; j < len(rf.peers); j++ {
+								if j == rf.me {
+									continue
+								}
+								if rf.matchIndex[j] >= i {
+									matchCount++
+								}
+							}
+							if matchCount*2 > len(rf.peers) {
+								rf.commitIndex = i
+							}
 						}
 					}
-					if found == false {
+					if rf.commitIndex != savedCommitIndex {
+						rf.newCommitCh <- struct{}{}
+					}
+				} else {
+					// - Upon receving a conflict response, the leader should first
+					//   search its log for conflictTerm. If it finds an entry in its
+					//   log with that term, it should set nextIndex to be the one
+					//   beyond the index of the last entry in that term in its log
+					// - If it does not find an entry with that term, it should set
+					//   nextIndex = conflictIndex
+					if reply.ConflictTerm == -1 {
 						rf.nextIndex[id] = reply.ConflictIndex
+					} else {
+						found := false
+						for i := rf.logSize() - 1; i >= rf.logBase; i-- {
+							if rf.logAt(i).Term == reply.ConflictTerm {
+								rf.nextIndex[id] = i + 1
+								found = true
+								break
+							}
+						}
+						if found == false {
+							rf.nextIndex[id] = reply.ConflictIndex
+						}
 					}
 				}
 			}
@@ -487,9 +521,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C)
 	rf.state = Follower
-	rf.heartbeatTimeout = 97 * time.Millisecond // must smaller than election timeout
+	rf.heartbeatTimeout = 100 * time.Millisecond // must smaller than election timeout
 	rf.lastHeartbeatTime = time.Unix(0, 0)
-	rf.heartbeatTicker = *time.NewTicker(rf.heartbeatTimeout)
 
 	rf.currentTerm = 0
 	rf.votedFor = -1
