@@ -95,13 +95,16 @@ type Raft struct {
 	matchIndex []int
 }
 
-func (rf *Raft) Report() {
-	// someone has already lock
-	// DPrintf("%s[%d %9s], term:%2d,base:%d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
-	// 	color[rf.me],
-	// 	rf.me, rf.state, rf.currentTerm, rf.logBase, rf.commitIndex, rf.lastApplied, rf.votedFor,
-	// 	rf.logSize()-1, rf.getLastLogTerm(), rf.nextIndex, rf.matchIndex,
-	// 	colorReset)
+func (rf *Raft) reporter() {
+	for rf.killed() == false {
+		rf.mu.Lock()
+		DPrintf("%s[%d %9s], term:%2d,base:%d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
+			color[rf.me],
+			rf.me, rf.state, rf.currentTerm, rf.logBase, rf.commitIndex, rf.lastApplied, rf.votedFor,
+			rf.logSize()-1, rf.getLastLogTerm(), rf.nextIndex, rf.matchIndex,
+			colorReset)
+		rf.mu.Unlock()
+	}
 }
 
 // return currentTerm and whether this server
@@ -135,12 +138,13 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer rf.persist()
 
 	// is not leader, return false
 	if rf.state != Leader {
 		return -1, -1, false
 	}
+
+	defer rf.persist()
 
 	index := rf.logSize()
 	term := rf.currentTerm
@@ -149,6 +153,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 		Command: command,
 	})
+
+	// send heartbeat
+	go rf.sendHeartbeat(term)
 
 	return index, term, true
 }
@@ -279,7 +286,6 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 			return
 		}
 
-		defer rf.persist()
 		rf.state = Leader
 		for i := 0; i < len(rf.peers); i++ {
 			rf.nextIndex[i] = rf.logSize()
@@ -300,16 +306,12 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 	}
 }
 
-// The triggerHeartbeat() send heartbeat periodically if it is a leader
-func (rf *Raft) triggerHeartbeat() {
+// The heartbeater() send heartbeat periodically if it is a leader
+func (rf *Raft) heartbeater() {
 	for rf.killed() == false {
 		time.Sleep(rf.heartbeatTimeout)
 
 		rf.mu.Lock()
-
-		// For debug
-		rf.Report()
-
 		if rf.state == Leader {
 			// send heartbeat
 			go rf.sendHeartbeat(rf.currentTerm)
@@ -508,10 +510,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.ticker()
 
 	// send heartbeat package if it's a leader
-	go rf.triggerHeartbeat()
+	go rf.heartbeater()
 
 	// start applier
 	go rf.applier()
+
+	// start reporter
+	// go rf.reporter()
 
 	return rf
 }

@@ -9,8 +9,8 @@ import (
 type PersistState struct {
 	CurrentTerm int
 	VoteFor     int
-	Log         []LogEntry
 	LogBase     int
+	Log         []LogEntry
 }
 
 //
@@ -85,4 +85,8 @@ func (rf *Raft) persistStateAndSnapshot(snapshot []byte) {
 		return
 	}
 	rf.persister.SaveStateAndSnapshot(w.Bytes(), snapshot)
+}
+
+func (rf *Raft) RaftStateSize() int {
+	return rf.persister.RaftStateSize()
 }
