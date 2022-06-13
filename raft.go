@@ -156,7 +156,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.persist()
 
 	// send heartbeat
-	go rf.sendHeartbeat(term)
+	// go rf.sendHeartbeat(term)
 
 	return index, term, true
 }
@@ -329,12 +329,6 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 	if rf.state != Leader || heartBeatTerm != rf.currentTerm {
 		return
 	}
-
-	if rf.lastSendHeartbeatTime.Add(5 * time.Millisecond).After(time.Now()) {
-		return
-	}
-
-	rf.lastSendHeartbeatTime = time.Now()
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
