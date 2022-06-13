@@ -79,9 +79,10 @@ type Raft struct {
 	applyCh     chan ApplyMsg
 	newCommitCh chan struct{}
 
-	state             RaftType
-	heartbeatTimeout  time.Duration
-	lastHeartbeatTime time.Time
+	state                 RaftType
+	heartbeatTimeout      time.Duration
+	lastHeartbeatTime     time.Time
+	lastSendHeartbeatTime time.Time
 
 	currentTerm int
 	votedFor    int
@@ -156,7 +157,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	})
 
 	// send heartbeat
-	// rf.sendHeartbeat(term)
+	rf.sendHeartbeat(term)
 
 	return index, term, true
 }
@@ -315,6 +316,12 @@ func (rf *Raft) heartbeater() {
 }
 
 func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
+
+	if rf.lastSendHeartbeatTime.Add(20 * time.Millisecond).After(time.Now()) {
+		return
+	}
+
+	rf.lastSendHeartbeatTime = time.Now()
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
@@ -511,6 +518,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.state = Follower
 	rf.heartbeatTimeout = 100 * time.Millisecond // must smaller than election timeout
 	rf.lastHeartbeatTime = time.Unix(0, 0)
+	rf.lastSendHeartbeatTime = time.Unix(0, 0)
 
 	rf.currentTerm = 0
 	rf.votedFor = -1
