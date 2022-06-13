@@ -85,8 +85,8 @@ type Raft struct {
 
 	currentTerm int
 	votedFor    int
-	log         []LogEntry
 	logBase     int
+	log         []LogEntry
 
 	commitIndex int
 	lastApplied int
@@ -323,12 +323,12 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 		go func(id int) {
 
 			rf.mu.Lock()
-			nextIndex := rf.nextIndex[id]
-
 			if rf.state != Leader || heartBeatTerm != rf.currentTerm {
 				rf.mu.Unlock()
 				return
 			}
+
+			nextIndex := rf.nextIndex[id]
 
 			if nextIndex <= rf.logBase {
 

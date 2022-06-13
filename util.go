@@ -7,9 +7,7 @@ import (
 )
 
 // Debugging
-var (
-	debug bool = false
-)
+var debug bool = false
 
 // Color for better debug
 const colorReset string = "\033[0m"
