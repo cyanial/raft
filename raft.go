@@ -330,7 +330,7 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 		return
 	}
 
-	if rf.lastSendHeartbeatTime.Add(20 * time.Millisecond).After(time.Now()) {
+	if rf.lastSendHeartbeatTime.Add(5 * time.Millisecond).After(time.Now()) {
 		return
 	}
 
