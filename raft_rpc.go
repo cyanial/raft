@@ -254,7 +254,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	// 1. Reply immediately if term < currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
-		// rf.mu.Unlock()
 		return
 	}
 
@@ -267,7 +266,6 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 
 	if args.LastIncludedIndex <= rf.logBase {
 		// snapshot is not up-to-date
-		// rf.mu.Unlock()
 		return
 	}
 
