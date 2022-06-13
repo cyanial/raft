@@ -383,15 +383,19 @@ func TestConcurrentStarts2B(t *testing.T) {
 	var success bool
 loop:
 	for try := 0; try < 5; try++ {
+		DPrintf("Test try: %d", try)
 		if try > 0 {
 			// give solution some time to settle
+			DPrintf("Test try: %d give solution some time to settle", try)
 			time.Sleep(3 * time.Second)
 		}
 
 		leader := cfg.checkOneLeader()
+		DPrintf("Test try: %d check one leader", try)
 		_, term, ok := cfg.rafts[leader].Start(1)
 		if !ok {
 			// leader moved on really quickly
+			DPrintf("Test try: %d leader moved on really quickly", try)
 			continue
 		}
 
@@ -415,10 +419,12 @@ loop:
 
 		wg.Wait()
 		close(is)
+		DPrintf("Msg: wait finish and close is")
 
 		for j := 0; j < servers; j++ {
 			if t, _ := cfg.rafts[j].GetState(); t != term {
 				// term changed -- can't expect low RPC counts
+				DPrintf("Msg: term changed -- can't expect low RPC counts")
 				continue loop
 			}
 		}
@@ -426,7 +432,9 @@ loop:
 		failed := false
 		cmds := []int{}
 		for index := range is {
+			DPrintf("Msg: cmd wait is %d", index)
 			cmd := cfg.wait(index, servers, term)
+			DPrintf("Msg: cmd wait done is %d", index)
 			if ix, ok := cmd.(int); ok {
 				if ix == -1 {
 					// peers have moved on to later terms
@@ -443,6 +451,7 @@ loop:
 
 		if failed {
 			// avoid leaking goroutines
+			DPrintf("Msg: avoid leaking goroutines")
 			go func() {
 				for range is {
 				}

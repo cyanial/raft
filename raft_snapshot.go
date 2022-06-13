@@ -40,39 +40,3 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 	rf.persistStateAndSnapshot(snapshot)
 }
-
-func (rf *Raft) sendSnapshot(id int, sendSnapshotTerm int, snapshot []byte) {
-
-	rf.mu.Lock()
-
-	args := &InstallSnapshotArgs{
-		Term:              sendSnapshotTerm,
-		LeaderId:          rf.me,
-		LastIncludedIndex: rf.logBase,
-		LastIncludedTerm:  rf.log[0].Term,
-		Data:              snapshot,
-	}
-	rf.mu.Unlock()
-
-	reply := &InstallSnapshotReply{}
-	ok := rf.sendInstallSnapshot(id, args, reply)
-	if !ok {
-		return
-	}
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	if rf.state != Leader || sendSnapshotTerm != rf.currentTerm {
-		return
-	}
-
-	defer rf.persist()
-
-	if reply.Term > rf.currentTerm {
-		rf.becomeFollower(reply.Term)
-		return
-	}
-
-	rf.nextIndex[id] = args.LastIncludedIndex + 1
-	rf.matchIndex[id] = args.LastIncludedIndex
-}
