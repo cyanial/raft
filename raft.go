@@ -79,14 +79,15 @@ type Raft struct {
 	applyCh     chan ApplyMsg
 	newCommitCh chan struct{}
 
-	state             RaftType
-	heartbeatTimeout  time.Duration
-	lastHeartbeatTime time.Time
+	state                 RaftType
+	heartbeatTimeout      time.Duration
+	lastHeartbeatTime     time.Time
+	lastSendHeartbeatTime time.Time
 
 	currentTerm int
 	votedFor    int
-	log         []LogEntry
 	logBase     int
+	log         []LogEntry
 
 	commitIndex int
 	lastApplied int
@@ -95,13 +96,17 @@ type Raft struct {
 	matchIndex []int
 }
 
-func (rf *Raft) Report() {
-	// someone has already lock
-	// DPrintf("%s[%d %9s], term:%2d,base:%d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
-	// 	color[rf.me],
-	// 	rf.me, rf.state, rf.currentTerm, rf.logBase, rf.commitIndex, rf.lastApplied, rf.votedFor,
-	// 	rf.logSize()-1, rf.getLastLogTerm(), rf.nextIndex, rf.matchIndex,
-	// 	colorReset)
+func (rf *Raft) reporter() {
+	for rf.killed() == false {
+		rf.mu.Lock()
+		DPrintf("%s[%d %9s], term:%2d,base:%d, comIdx:%3d, lasApp:%3d, votFor:%2d, log:%3d %d N,M:%v%v%s",
+			color[rf.me],
+			rf.me, rf.state, rf.currentTerm, rf.logBase, rf.commitIndex, rf.lastApplied, rf.votedFor,
+			rf.logSize()-1, rf.getLastLogTerm(), rf.nextIndex, rf.matchIndex,
+			colorReset)
+		rf.mu.Unlock()
+	}
+
 }
 
 // return currentTerm and whether this server
@@ -135,12 +140,13 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer rf.persist()
 
 	// is not leader, return false
 	if rf.state != Leader {
 		return -1, -1, false
 	}
+
+	defer rf.persist()
 
 	index := rf.logSize()
 	term := rf.currentTerm
@@ -192,7 +198,7 @@ func (rf *Raft) ticker() {
 		if !rf.lastHeartbeatTime.Add(wait_time).After(time.Now()) {
 			if rf.state == Follower {
 				// start election
-				go rf.startElection(rf.currentTerm)
+				rf.startElection(rf.currentTerm)
 			}
 		}
 		rf.mu.Unlock()
@@ -203,13 +209,6 @@ func (rf *Raft) ticker() {
 // start an election
 //
 func (rf *Raft) startElection(electionTerm int) {
-
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	if rf.state == Leader || rf.currentTerm != electionTerm {
-		return
-	}
 
 	defer rf.persist()
 
@@ -281,7 +280,6 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 			return
 		}
 
-		defer rf.persist()
 		rf.state = Leader
 		for i := 0; i < len(rf.peers); i++ {
 			rf.nextIndex[i] = rf.logSize()
@@ -298,19 +296,16 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 			return
 		}
 
-		go rf.startElection(rf.currentTerm)
+		rf.startElection(rf.currentTerm)
 	}
 }
 
 // The triggerHeartbeat() send heartbeat periodically if it is a leader
-func (rf *Raft) triggerHeartbeat() {
+func (rf *Raft) heartbeater() {
 	for rf.killed() == false {
 		time.Sleep(rf.heartbeatTimeout)
 
 		rf.mu.Lock()
-
-		// For debug
-		// rf.Report()
 
 		if rf.state == Leader {
 			// send heartbeat
@@ -322,12 +317,12 @@ func (rf *Raft) triggerHeartbeat() {
 
 func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
-	// rf.mu.Lock()
-	// defer rf.mu.Unlock()
 
-	// if rf.state != Leader || heartBeatTerm != rf.currentTerm {
-	// 	return
-	// }
+	if rf.lastSendHeartbeatTime.Add(20 * time.Millisecond).After(time.Now()) {
+		return
+	}
+
+	rf.lastSendHeartbeatTime = time.Now()
 
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
@@ -359,6 +354,7 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 				if !ok {
 					return
 				}
+
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
 
@@ -375,20 +371,21 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
 				rf.nextIndex[id] = args.LastIncludedIndex + 1
 				rf.matchIndex[id] = args.LastIncludedIndex
+
 			} else {
 
 				// nextIndex > rf.logBase
 				// realIndex + rf.logBase = nextIndex
-
+        
 				args := &AppendEntriesArgs{
 					Term:         heartBeatTerm,
 					LeaderId:     rf.me,
 					PrevLogIndex: nextIndex - 1,
 					PrevLogTerm:  rf.logAt(nextIndex - 1).Term,
-					Entries:      make([]LogEntry, len(rf.log[nextIndex-rf.logBase:])),
+					Entries:      append([]LogEntry(nil), rf.log[nextIndex-rf.logBase:]...),
 					LeaderCommit: rf.commitIndex,
 				}
-				copy(args.Entries, rf.log[nextIndex-rf.logBase:])
+
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
@@ -471,15 +468,15 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 //
 func (rf *Raft) applier() {
 	for rf.killed() == false {
-		for range rf.newCommitCh {
+
+		select {
+		case <-rf.newCommitCh:
 			rf.mu.Lock()
 
 			savedLastApplied := rf.lastApplied
 			var entries []LogEntry
 			if rf.commitIndex > rf.lastApplied {
-				// avoid data race
-				entries = make([]LogEntry, rf.commitIndex-rf.lastApplied)
-				copy(entries, rf.log[rf.lastApplied+1-rf.logBase:rf.commitIndex+1-rf.logBase])
+				entries = append(entries, rf.log[rf.lastApplied+1-rf.logBase:rf.commitIndex+1-rf.logBase]...)
 				rf.lastApplied = rf.commitIndex
 			}
 			rf.mu.Unlock()
@@ -523,6 +520,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.state = Follower
 	rf.heartbeatTimeout = 100 * time.Millisecond // must smaller than election timeout
 	rf.lastHeartbeatTime = time.Unix(0, 0)
+	rf.lastSendHeartbeatTime = time.Unix(0, 0)
 
 	rf.currentTerm = 0
 	rf.votedFor = -1
@@ -544,10 +542,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.ticker()
 
 	// send heartbeat package if it's a leader
-	go rf.triggerHeartbeat()
+	go rf.heartbeater()
 
 	// start applier
 	go rf.applier()
+
+	// start reporter
+	// go rf.reporter()
 
 	return rf
 }
