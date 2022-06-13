@@ -506,7 +506,7 @@ func (svc *Service) dispatch(methname string, req reqMsg) replyMsg {
 		return replyMsg{true, rb.Bytes()}
 	} else {
 		choices := []string{}
-		for k, _ := range svc.methods {
+		for k := range svc.methods {
 			choices = append(choices, k)
 		}
 		log.Fatalf("labrpc.Service.dispatch(): unknown method %v in %v; expecting one of %v\n",
