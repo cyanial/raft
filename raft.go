@@ -317,6 +317,7 @@ func (rf *Raft) heartbeater() {
 
 func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
+
 	if rf.lastSendHeartbeatTime.Add(20 * time.Millisecond).After(time.Now()) {
 		return
 	}
@@ -375,7 +376,7 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
 				// nextIndex > rf.logBase
 				// realIndex + rf.logBase = nextIndex
-
+        
 				args := &AppendEntriesArgs{
 					Term:         heartBeatTerm,
 					LeaderId:     rf.me,
@@ -384,6 +385,7 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 					Entries:      append([]LogEntry(nil), rf.log[nextIndex-rf.logBase:]...),
 					LeaderCommit: rf.commitIndex,
 				}
+
 				rf.mu.Unlock()
 
 				reply := &AppendEntriesReply{}
