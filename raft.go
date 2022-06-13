@@ -144,8 +144,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, -1, false
 	}
 
-	defer rf.persist()
-
 	index := rf.logSize()
 	term := rf.currentTerm
 
@@ -153,6 +151,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 		Command: command,
 	})
+
+	rf.persist()
 
 	// send heartbeat
 	go rf.sendHeartbeat(term)
