@@ -9,8 +9,8 @@ import (
 type PersistState struct {
 	CurrentTerm int
 	VoteFor     int
-	Log         []LogEntry
 	LogBase     int
+	Log         []LogEntry
 }
 
 //

@@ -106,7 +106,6 @@ func (rf *Raft) reporter() {
 			colorReset)
 		rf.mu.Unlock()
 	}
-
 }
 
 // return currentTerm and whether this server
@@ -146,8 +145,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, -1, false
 	}
 
-	defer rf.persist()
-
 	index := rf.logSize()
 	term := rf.currentTerm
 
@@ -156,8 +153,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Command: command,
 	})
 
+	rf.persist()
+
 	// send heartbeat
-	rf.sendHeartbeat(term)
+	go rf.sendHeartbeat(term)
 
 	return index, term, true
 }
@@ -300,13 +299,12 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 	}
 }
 
-// The triggerHeartbeat() send heartbeat periodically if it is a leader
+// The heartbeater() send heartbeat periodically if it is a leader
 func (rf *Raft) heartbeater() {
 	for rf.killed() == false {
 		time.Sleep(rf.heartbeatTimeout)
 
 		rf.mu.Lock()
-
 		if rf.state == Leader {
 			// send heartbeat
 			rf.sendHeartbeat(rf.currentTerm)
@@ -319,6 +317,10 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
 
 	if rf.lastSendHeartbeatTime.Add(20 * time.Millisecond).After(time.Now()) {
+		return
+	}
+
+	if rf.lastSendHeartbeatTime.Add(5 * time.Millisecond).After(time.Now()) {
 		return
 	}
 
