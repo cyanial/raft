@@ -86,8 +86,8 @@ type Raft struct {
 
 	currentTerm int
 	votedFor    int
-	logBase     int
 	log         []LogEntry
+	logBase     int
 
 	commitIndex int
 	lastApplied int
@@ -188,6 +188,7 @@ func (rf *Raft) ticker() {
 	for rf.killed() == false {
 
 		// random sleep time. (150ms-300ms paper recommanded)
+		// a little bit longer than recommanded (200, 400))
 		wait_time := randomElectionTime()
 		time.Sleep(wait_time)
 
@@ -197,7 +198,7 @@ func (rf *Raft) ticker() {
 		if !rf.lastHeartbeatTime.Add(wait_time).After(time.Now()) {
 			if rf.state == Follower {
 				// start election
-				rf.startElection(rf.currentTerm)
+				go rf.startElection(rf.currentTerm)
 			}
 		}
 		rf.mu.Unlock()
@@ -208,6 +209,13 @@ func (rf *Raft) ticker() {
 // start an election
 //
 func (rf *Raft) startElection(electionTerm int) {
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.state == Leader || rf.currentTerm != electionTerm {
+		return
+	}
 
 	defer rf.persist()
 
@@ -285,7 +293,7 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 			rf.matchIndex[i] = 0
 		}
 		// send heartbeat
-		rf.sendHeartbeat(rf.currentTerm)
+		go rf.sendHeartbeat(rf.currentTerm)
 
 	case <-time.After(randomElectionTime()):
 		rf.mu.Lock()
@@ -295,7 +303,7 @@ func (rf *Raft) checkVotes(receiveMajority chan struct{}, electionTerm int) {
 			return
 		}
 
-		rf.startElection(rf.currentTerm)
+		go rf.startElection(rf.currentTerm)
 	}
 }
 
@@ -307,7 +315,7 @@ func (rf *Raft) heartbeater() {
 		rf.mu.Lock()
 		if rf.state == Leader {
 			// send heartbeat
-			rf.sendHeartbeat(rf.currentTerm)
+			go rf.sendHeartbeat(rf.currentTerm)
 		}
 		rf.mu.Unlock()
 	}
@@ -315,12 +323,14 @@ func (rf *Raft) heartbeater() {
 
 func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
-	if rf.lastSendHeartbeatTime.Add(20 * time.Millisecond).After(time.Now()) {
+	if rf.state != Leader || heartBeatTerm != rf.currentTerm {
 		return
 	}
 
-	if rf.lastSendHeartbeatTime.Add(5 * time.Millisecond).After(time.Now()) {
+	if rf.lastSendHeartbeatTime.Add(20 * time.Millisecond).After(time.Now()) {
 		return
 	}
 
@@ -333,128 +343,92 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 		go func(id int) {
 
 			rf.mu.Lock()
-			if rf.state != Leader || heartBeatTerm != rf.currentTerm {
+			nextIndex := rf.nextIndex[id]
+
+			if nextIndex <= rf.logBase {
+				go rf.sendSnapshot(id, heartBeatTerm, rf.persister.ReadSnapshot())
 				rf.mu.Unlock()
 				return
 			}
 
-			nextIndex := rf.nextIndex[id]
+			// nextIndex > rf.logBase
+			// realIndex + rf.logBase = nextIndex
 
-			if nextIndex <= rf.logBase {
+			args := &AppendEntriesArgs{
+				Term:         heartBeatTerm,
+				LeaderId:     rf.me,
+				PrevLogIndex: nextIndex - 1,
+				PrevLogTerm:  rf.logAt(nextIndex - 1).Term,
+				Entries:      make([]LogEntry, len(rf.log[nextIndex-rf.logBase:])),
+				LeaderCommit: rf.commitIndex,
+			}
+			copy(args.Entries, rf.log[nextIndex-rf.logBase:])
+			rf.mu.Unlock()
 
-				args := &InstallSnapshotArgs{
-					Term:              heartBeatTerm,
-					LeaderId:          rf.me,
-					LastIncludedIndex: rf.logBase,
-					LastIncludedTerm:  rf.log[0].Term,
-					Data:              rf.persister.ReadSnapshot(),
+			reply := &AppendEntriesReply{}
+			ok := rf.sendAppendEntries(id, args, reply)
+			if !ok {
+				return
+			}
+
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+
+			if rf.state != Leader || heartBeatTerm != rf.currentTerm {
+				return
+			}
+
+			defer rf.persist()
+
+			if reply.Term > rf.currentTerm {
+				rf.becomeFollower(reply.Term)
+				return
+			}
+
+			if reply.Success {
+				rf.nextIndex[id] = nextIndex + len(args.Entries)
+				rf.matchIndex[id] = rf.nextIndex[id] - 1
+
+				savedCommitIndex := rf.commitIndex
+				for i := rf.commitIndex + 1; i < rf.logSize(); i++ {
+					if rf.logAt(i).Term == rf.currentTerm {
+						matchCount := 1
+						for j := 0; j < len(rf.peers); j++ {
+							if j == rf.me {
+								continue
+							}
+							if rf.matchIndex[j] >= i {
+								matchCount++
+							}
+						}
+						if matchCount*2 > len(rf.peers) {
+							rf.commitIndex = i
+						}
+					}
 				}
-				rf.mu.Unlock()
-
-				reply := &InstallSnapshotReply{}
-				ok := rf.sendInstallSnapshot(id, args, reply)
-				if !ok {
-					return
+				if rf.commitIndex != savedCommitIndex {
+					rf.newCommitCh <- struct{}{}
 				}
-
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-
-				if rf.state != Leader || heartBeatTerm != rf.currentTerm {
-					return
-				}
-
-				defer rf.persist()
-
-				if reply.Term > rf.currentTerm {
-					rf.becomeFollower(reply.Term)
-					return
-				}
-
-				rf.nextIndex[id] = args.LastIncludedIndex + 1
-				rf.matchIndex[id] = args.LastIncludedIndex
-
 			} else {
-
-				// nextIndex > rf.logBase
-				// realIndex + rf.logBase = nextIndex
-        
-				args := &AppendEntriesArgs{
-					Term:         heartBeatTerm,
-					LeaderId:     rf.me,
-					PrevLogIndex: nextIndex - 1,
-					PrevLogTerm:  rf.logAt(nextIndex - 1).Term,
-					Entries:      append([]LogEntry(nil), rf.log[nextIndex-rf.logBase:]...),
-					LeaderCommit: rf.commitIndex,
-				}
-
-				rf.mu.Unlock()
-
-				reply := &AppendEntriesReply{}
-				ok := rf.sendAppendEntries(id, args, reply)
-				if !ok {
-					return
-				}
-
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-
-				if rf.state != Leader || heartBeatTerm != rf.currentTerm {
-					return
-				}
-
-				defer rf.persist()
-
-				if reply.Term > rf.currentTerm {
-					rf.becomeFollower(reply.Term)
-					return
-				}
-
-				if reply.Success {
-					rf.nextIndex[id] = nextIndex + len(args.Entries)
-					rf.matchIndex[id] = rf.nextIndex[id] - 1
-
-					savedCommitIndex := rf.commitIndex
-					for i := rf.commitIndex + 1; i < rf.logSize(); i++ {
-						if rf.logAt(i).Term == rf.currentTerm {
-							matchCount := 1
-							for j := 0; j < len(rf.peers); j++ {
-								if j == rf.me {
-									continue
-								}
-								if rf.matchIndex[j] >= i {
-									matchCount++
-								}
-							}
-							if matchCount*2 > len(rf.peers) {
-								rf.commitIndex = i
-							}
-						}
-					}
-					if rf.commitIndex != savedCommitIndex {
-						rf.newCommitCh <- struct{}{}
-					}
+				// - Upon receving a conflict response, the leader should first
+				//   search its log for conflictTerm. If it finds an entry in its
+				//   log with that term, it should set nextIndex to be the one
+				//   beyond the index of the last entry in that term in its log
+				// - If it does not find an entry with that term, it should set
+				//   nextIndex = conflictIndex
+				if reply.ConflictTerm == -1 {
+					rf.nextIndex[id] = reply.ConflictIndex
 				} else {
-					// - Upon receving a conflict response, the leader should first
-					//   search its log for conflictTerm. If it finds an entry in its
-					//   log with that term, it should set nextIndex to be the one
-					//   beyond the index of the last entry in that term in its log
-					// - If it does not find an entry with that term, it should set
-					//   nextIndex = conflictIndex
-					if reply.ConflictTerm == -1 {
+					found := false
+					for i := rf.logSize() - 1; i >= rf.logBase; i-- {
+						if rf.logAt(i).Term == reply.ConflictTerm {
+							rf.nextIndex[id] = i + 1
+							found = true
+							break
+						}
+					}
+					if found == false {
 						rf.nextIndex[id] = reply.ConflictIndex
-					} else {
-						found := false
-						for i := rf.logSize() - 1; i >= rf.logBase; i-- {
-							if rf.logAt(i).Term == reply.ConflictTerm {
-								rf.nextIndex[id] = i + 1
-								found = true
-								break
-							}
-						}
-						if found == false {
-							rf.nextIndex[id] = reply.ConflictIndex
-						}
 					}
 				}
 			}
@@ -470,15 +444,15 @@ func (rf *Raft) sendHeartbeat(heartBeatTerm int) {
 //
 func (rf *Raft) applier() {
 	for rf.killed() == false {
-
-		select {
-		case <-rf.newCommitCh:
+		for range rf.newCommitCh {
 			rf.mu.Lock()
 
 			savedLastApplied := rf.lastApplied
 			var entries []LogEntry
 			if rf.commitIndex > rf.lastApplied {
-				entries = append(entries, rf.log[rf.lastApplied+1-rf.logBase:rf.commitIndex+1-rf.logBase]...)
+				// avoid data race
+				entries = make([]LogEntry, rf.commitIndex-rf.lastApplied)
+				copy(entries, rf.log[rf.lastApplied+1-rf.logBase:rf.commitIndex+1-rf.logBase])
 				rf.lastApplied = rf.commitIndex
 			}
 			rf.mu.Unlock()
