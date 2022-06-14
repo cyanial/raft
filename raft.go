@@ -488,7 +488,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// Your initialization code here (2A, 2B, 2C)
 	rf.state = Follower
-	rf.heartbeatTimeout = 27 * time.Millisecond // must smaller than election timeout
+	rf.heartbeatTimeout = 100 * time.Millisecond // must smaller than election timeout
 	rf.lastHeartbeatTime = time.Unix(0, 0)
 
 	rf.currentTerm = 0
