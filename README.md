@@ -23,6 +23,7 @@
 
 ## To-dos:
 
+0. Agree Faster Issues#3
 1. 多跑几次测试
 2. 优化 ugly if-else
  
